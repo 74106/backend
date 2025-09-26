@@ -1,1 +1,0 @@
-GOOGLE_CLIENT_ID=207286780143-u7p7hbpamjn7i1uluktvdjgd9345ov3d.apps.googleusercontent.com
