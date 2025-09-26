@@ -39,7 +39,7 @@ def apply_policy(original_answer: Optional[str], user_question: str, language: s
     - If user asks about identity, return fixed identity sentence.
     - If user's question is not legal, refuse.
     - Sanitize model output to avoid alternative identity claims.
-    - Ensure answer contains legal keywords, else refuse.
+    - Ensure answer contains legal keywords, else retry.
     - Maintain a Formal and Neutral Tone.
     - Request Clarification for Ambiguous Queries.
     """
@@ -75,4 +75,5 @@ def apply_policy(original_answer: Optional[str], user_question: str, language: s
         return 'My function is to provide information on legal topics. Please frame your question accordingly.'
 
     return ans
+
 
