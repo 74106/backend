@@ -133,4 +133,4 @@ Desktop.ini
 
 # PDF output (if generated)
 *.pdf
-*.env
+*.env.conf
