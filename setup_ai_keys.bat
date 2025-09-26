@@ -27,7 +27,7 @@ echo 4. Copy the API key (starts with "AIza...")
 echo.
 
 echo Enter your Google Gemini API Key (or press Enter to skip):
-set /p GEMINI_KEY=AIzaSyDV0SNPq0XuX_ySF2fPvC50kanqxnpQgck
+set /p GEMINI_KEY=
 if not "%GEMINI_KEY%"=="" (
     setx GEMINI_API_KEY "AIzaSyDV0SNPq0XuX_ySF2fPvC50kanqxnpQgck"
     echo ✅ Gemini API Key set successfully!
