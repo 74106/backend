@@ -13,7 +13,8 @@ FLASK_ENV=development
 
 # Legal AI Integration
 LEGAL_AI_URL=http://localhost:10000/chat
-LEGAL_AI_KEY=
+LEGAL_AI_KEY=AIzaSyCCfsAO-ylHyx4QgJ5YEz3ploUkq0OJols
 
 # Database
 NYAYSETU_DB_PATH=nyaysetu.db
+
