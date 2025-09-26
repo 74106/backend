@@ -50,10 +50,10 @@ def apply_policy(original_answer: Optional[str], user_question: str, language: s
         return 'I am an AI assistant specializing in legal information.'
 
     if user_question.lower().startswith("what is") or "explain" in user_question.lower():
-    return model_out  # Allow general legal definitions
+        return model_out  # Allow general legal definitions
 
     if not any(k in ans.lower() for k in [... legal keywords ...]):
-    return "My function is to provide information on legal topics. Please frame your question accordingly."
+        return "My function is to provide information on legal topics. Please frame your question accordingly."
 
 
     # Non-legal user question -> refusal
@@ -87,6 +87,7 @@ def test_apply_policy_allows_definitions():
     model_out = 'An FIR is a First Information Report, a written document prepared by police when they receive information about a cognizable offence.'
     res = apply_policy(model_out, 'What is FIR?', language='en')
     assert 'FIR' in res and 'Report' in res
+
 
 
 
