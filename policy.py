@@ -39,7 +39,7 @@ def apply_policy(original_answer: Optional[str], user_question: str, language: s
     - If user asks about identity, return fixed identity sentence.
     - If user's question is not legal, refuse.
     - Sanitize model output to avoid alternative identity claims.
-    - Ensure answer contains legal keywords, else retry.
+    - Ensure answer contains legal keywords, else refuse.
     - Maintain a Formal and Neutral Tone.
     - Request Clarification for Ambiguous Queries.
     """
@@ -49,11 +49,18 @@ def apply_policy(original_answer: Optional[str], user_question: str, language: s
             return 'मैं कानूनी जानकारी में विशेषज्ञता वाला एक एआई सहायक हूं।'
         return 'I am an AI assistant specializing in legal information.'
 
+    if user_question.lower().startswith("what is") or "explain" in user_question.lower():
+    return model_out  # Allow general legal definitions
+
+    if not any(k in ans.lower() for k in [... legal keywords ...]):
+    return "My function is to provide information on legal topics. Please frame your question accordingly."
+
+
     # Non-legal user question -> refusal
     if not is_legal_question(user_question):
         if language.startswith('hi'):
             return 'मैं केवल कानूनी जानकारी प्रदान कर सकता/सकती हूँ। कृपया एक कानूनी प्रश्न पूछें।'
-        return 'I can only provide legal knowledge. Please ask a legal question.'
+        return 'Hey! This is legel chatbot, how may i help you?'
 
     ans = (original_answer or '').strip()
     lower = ans.lower()
@@ -75,5 +82,11 @@ def apply_policy(original_answer: Optional[str], user_question: str, language: s
         return 'My function is to provide information on legal topics. Please frame your question accordingly.'
 
     return ans
+
+def test_apply_policy_allows_definitions():
+    model_out = 'An FIR is a First Information Report, a written document prepared by police when they receive information about a cognizable offence.'
+    res = apply_policy(model_out, 'What is FIR?', language='en')
+    assert 'FIR' in res and 'Report' in res
+
 
 
