@@ -42,10 +42,6 @@ def apply_policy(original_answer: Optional[str], user_question: str, language: s
     - Ensure answer contains legal keywords, else refuse.
     - Maintain a Formal and Neutral Tone.
     - Request Clarification for Ambiguous Queries.
-    - Escalation to Human Expert, For topics too complex, nuanced, or sensitive for an AI the model should proactively recommend consulting a human expert.
-    - Refusal of Unethical or Illegal Inquiries.
-    - Jurisdictional Transparency.
-    
     """
     # Identity question -> fixed identity
     if is_identity_question(user_question):
@@ -79,3 +75,4 @@ def apply_policy(original_answer: Optional[str], user_question: str, language: s
         return 'My function is to provide information on legal topics. Please frame your question accordingly.'
 
     return ans
+
