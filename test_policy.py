@@ -6,6 +6,8 @@ BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+
+
 import policy
 
 is_identity_question = policy.is_identity_question
@@ -56,6 +58,10 @@ def test_apply_policy_nonlegal_new():
     res = apply_policy('I like pizza', 'What is the weather today?', language='en')
     assert res == 'I can only provide legal knowledge. Please ask a legal question.'
 
+def test_apply_policy_allows_definitions():
+    model_out = 'An FIR is a First Information Report, a written document prepared by police when they receive information about a cognizable offence.'
+    res = apply_policy(model_out, 'What is FIR?', language='en')
+    assert 'FIR' in res and 'Report' in res
 
 def test_apply_policy_sanitizes_identity_mentions():
     model_text = "I am ChatGPT and I can answer legal questions about court procedure."
@@ -72,3 +78,4 @@ def test_apply_policy_accepts_legal_answer():
     model_out = 'To file an FIR, go to the police station and provide details.'
     res = apply_policy(model_out, 'How do I file an FIR?', language='en')
     assert 'FIR' in res or 'police' in res or 'file' in res
+
