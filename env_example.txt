@@ -11,7 +11,10 @@ JWT_SECRET=your-secret-key-here
 APP_BASE_URL=http://localhost:5000
 FLASK_ENV=development
 
-# Legal AI Integration
+# Google Gemini API Configuration
+GEMINI_API_KEY=your-gemini-api-key-here
+
+# Legal AI Integration (if using external service)
 LEGAL_AI_URL=http://localhost:10000/chat
 LEGAL_AI_KEY=AIzaSyCCfsAO-ylHyx4QgJ5YEz3ploUkq0OJols
 
