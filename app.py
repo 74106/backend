@@ -13,11 +13,7 @@ from utils.db import (
     fetch_forms_filtered,
     create_user,
     get_user_by_email,
-    get_user_by_verification_token,
-    set_user_verified,
-    set_verification_token,
 )
-from utils.auth import send_verification_email
 import logging
 import os
 import time
@@ -153,7 +149,7 @@ def root():
         "<p>Status: healthy. See <code>/health</code>.</p>"
         "<h3>Auth</h3>"
         "<div class='endpoint'><b>POST</b> <code>/auth/register</code> { email, password }</div>"
-        "<div class='endpoint'><b>GET</b> <code>/auth/verify?token=...</code></div>"
+        ""
         "<div class='endpoint'><b>POST</b> <code>/auth/login</code> { email, password }</div>"
         "<h3>Data</h3>"
         "<div class='endpoint'><b>POST</b> <code>/chat</code> (Bearer token required)</div>"
@@ -225,7 +221,7 @@ def chat():
 
 @app.route('/auth/register', methods=['POST'])
 def register():
-    """Register a new user with email verification."""
+    """Register a new user without email verification."""
     try:
         data = request.get_json() or {}
         email = (data.get('email') or '').strip().lower()
@@ -242,28 +238,35 @@ def register():
         if existing_user:
             return jsonify({'error': 'User with this email already exists'}), 409
         
-        # Hash password and create user
+        # Hash password and create user (auto-verified)
         password_hash = hash_password(password)
-        verification_token = generate_token()
         timestamp = get_current_timestamp()
-        
+
         try:
-            user_id = create_user(email, password_hash, verification_token, timestamp)
+            # Store as verified by setting verification_token to NULL and is_verified=1 directly
+            # The create_user helper sets is_verified=0 by default, so we mimic creation then set verified
+            user_id = create_user(email, password_hash, None, timestamp)
         except Exception as db_err:
             logger.error(f"Failed to create user: {db_err}")
             return jsonify({'error': 'Failed to create user account'}), 500
-        
-        # Send verification email
+
+        # Manually mark verified in DB since create_user sets default 0
         try:
-            base_url = os.environ.get('APP_BASE_URL', 'http://localhost:5000')
-            verify_link = f"{base_url}/auth/verify?token={verification_token}"
-            send_verification_email(email, verify_link)
-        except Exception as email_err:
-            logger.error(f"Failed to send verification email: {email_err}")
-            return jsonify({'error': 'Account created but verification email failed'}), 500
-        
+            import sqlite3
+            from utils.db import get_db_connection
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE users SET is_verified = 1, verification_token = NULL, verified_at = ? WHERE id = ?",
+                (timestamp, user_id),
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Failed to auto-verify user: {e}")
+
         return jsonify({
-            'message': 'Registration successful. Please check your email for verification.',
+            'message': 'Registration successful',
             'user_id': user_id
         }), 201
         
@@ -271,30 +274,7 @@ def register():
         logger.error(f"Error in register endpoint: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
-@app.route('/auth/verify', methods=['GET'])
-def verify_email():
-    """Verify user email with token."""
-    try:
-        token = request.args.get('token')
-        if not token:
-            return jsonify({'error': 'Verification token is required'}), 400
-        
-        user = get_user_by_verification_token(token)
-        if not user:
-            return jsonify({'error': 'Invalid or expired verification token'}), 400
-        
-        if user['is_verified']:
-            return jsonify({'message': 'Email already verified'}), 200
-        
-        # Mark user as verified
-        timestamp = get_current_timestamp()
-        set_user_verified(user['id'], timestamp)
-        
-        return jsonify({'message': 'Email verified successfully'}), 200
-        
-    except Exception as e:
-        logger.error(f"Error in verify endpoint: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
+# Removed /auth/verify endpoint (email verification disabled)
 
 @app.route('/auth/login', methods=['POST'])
 def login():
@@ -311,8 +291,7 @@ def login():
         if not user:
             return jsonify({'error': 'Invalid email or password'}), 401
         
-        if not user['is_verified']:
-            return jsonify({'error': 'Please verify your email before logging in'}), 401
+        # Email verification disabled; skip is_verified check
         
         if not verify_password(password, user['password_hash']):
             return jsonify({'error': 'Invalid email or password'}), 401
