@@ -100,22 +100,22 @@ def get_current_user():
     except Exception:
         return None
 
-def call_deepseek_api(prompt, language="en"):
+def call_cohere_api(prompt, language="en"):
     """
-    Calls the DeepSeek API with the given prompt.
+    Calls the Cohere API with the given prompt.
     """
-    api_key = os.environ.get("DEEPSEEK_API_KEY")
+    api_key = os.environ.get("COHERE_API_KEY")
     if not api_key:
-        logger.error("DEEPSEEK_API_KEY not set in environment")
+        logger.error("COHERE_API_KEY not set in environment")
         return None
 
     if requests is None:
-        logger.error("The 'requests' library is required for DeepSeek API calls")
+        logger.error("The 'requests' library is required for Cohere API calls")
         return None
 
     try:
-        # DeepSeek API endpoint
-        api_url = "https://api.deepseek.com/v1/chat/completions"
+        # Cohere API endpoint
+        api_url = "https://api.cohere.ai/v1/chat"
         
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -123,37 +123,31 @@ def call_deepseek_api(prompt, language="en"):
         }
         
         payload = {
-            "model": "deepseek-chat",
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You are a helpful legal AI assistant specializing in Indian law. Provide clear, practical legal advice based on Indian legal framework. Focus on relevant Indian laws, practical steps, legal remedies, and when to consult a lawyer. Always include disclaimers about consulting qualified legal professionals for specific cases."
-                },
-                {
-                    "role": "user", 
-                    "content": prompt
-                }
-            ],
+            "model": "command-a-03-2025",
+            "message": prompt,
             "max_tokens": 1000,
             "temperature": 0.7,
-            "top_p": 0.9
+            "p": 0.9,
+            "k": 0,
+            "stop_sequences": [],
+            "stream": False
         }
         
         resp = requests.post(api_url, headers=headers, json=payload, timeout=30)
         
         if resp.status_code == 200:
             data = resp.json()
-            if 'choices' in data and len(data['choices']) > 0:
-                answer = data['choices'][0]['message']['content']
-                return answer.strip()
+            if 'text' in data:
+                answer = data['text'].strip()
+                return answer
             else:
                 return "I understand you're asking about a legal matter. Please consult a qualified legal professional for specific advice."
         else:
-            logger.error(f"DeepSeek API returned status {resp.status_code}: {resp.text}")
+            logger.error(f"Cohere API returned status {resp.status_code}: {resp.text}")
             return None
             
     except Exception as e:
-        logger.error(f"DeepSeek API call failed: {e}")
+        logger.error(f"Cohere API call failed: {e}")
         return None
 
 @app.route('/', methods=['GET'])
@@ -204,11 +198,11 @@ def chat():
         except Exception as local_err:
             logger.warning(f"Local legal model failed: {local_err}")
 
-        # If local model failed, try DeepSeek API
+        # If local model failed, try Cohere API
         if not answer:
-            answer = call_deepseek_api(question, language)
+            answer = call_cohere_api(question, language)
             if answer:
-                logger.info("Got answer from DeepSeek API")
+                logger.info("Got answer from Cohere API")
 
         # If still no answer, fallback
         if not answer:
@@ -232,7 +226,7 @@ def chat():
             'question': question,
             'language': language,
             'timestamp': timestamp,
-            'source': 'deepseek_api' if answer and 'deepseek' in str(answer).lower() else 'local_model'
+            'source': 'cohere_api' if answer and 'cohere' in str(answer).lower() else 'local_model'
         })
     except Exception as e:
         logger.error(f"Error in chat endpoint: {e}")
