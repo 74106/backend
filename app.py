@@ -100,41 +100,60 @@ def get_current_user():
     except Exception:
         return None
 
-def call_gemini_api(prompt, language="en"):
+def call_openai_api(prompt, language="en"):
     """
-    Calls the Google Gemini API with the given prompt.
+    Calls the OpenAI API with the given prompt.
     """
-    api_key = os.environ.get("GEMINI_API_KEY")
+    api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        logger.error("GEMINI_API_KEY not set in environment")
+        logger.error("OPENAI_API_KEY not set in environment")
         return None
 
     if requests is None:
-        logger.error("The 'requests' library is required for Gemini API calls")
+        logger.error("The 'requests' library is required for OpenAI API calls")
         return None
 
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
-    headers = {"Content-Type": "application/json"}
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.7,
-            "topK": 40,
-            "topP": 0.95,
-            "maxOutputTokens": 1024,
-        }
-    }
     try:
-        resp = requests.post(f"{url}?key={api_key}", headers=headers, json=payload, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
-        # Parse Gemini format
-        try:
-            return data["candidates"][0]["content"]["parts"][0]["text"]
-        except Exception:
-            return str(data)
+        # OpenAI API endpoint
+        api_url = "https://api.openai.com/v1/chat/completions"
+        
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": "gpt-3.5-turbo",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a helpful legal AI assistant specializing in Indian law. Provide clear, practical legal advice based on Indian legal framework. Focus on relevant Indian laws, practical steps, legal remedies, and when to consult a lawyer. Always include disclaimers about consulting qualified legal professionals for specific cases."
+                },
+                {
+                    "role": "user", 
+                    "content": prompt
+                }
+            ],
+            "max_tokens": 1000,
+            "temperature": 0.7,
+            "top_p": 0.9
+        }
+        
+        resp = requests.post(api_url, headers=headers, json=payload, timeout=30)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            if 'choices' in data and len(data['choices']) > 0:
+                answer = data['choices'][0]['message']['content']
+                return answer.strip()
+            else:
+                return "I understand you're asking about a legal matter. Please consult a qualified legal professional for specific advice."
+        else:
+            logger.error(f"OpenAI API returned status {resp.status_code}: {resp.text}")
+            return None
+            
     except Exception as e:
-        logger.error(f"Gemini API call failed: {e}")
+        logger.error(f"OpenAI API call failed: {e}")
         return None
 
 @app.route('/', methods=['GET'])
@@ -185,11 +204,11 @@ def chat():
         except Exception as local_err:
             logger.warning(f"Local legal model failed: {local_err}")
 
-        # If local model failed, try Gemini
+        # If local model failed, try OpenAI API
         if not answer:
-            answer = call_gemini_api(question, language)
+            answer = call_openai_api(question, language)
             if answer:
-                logger.info("Got answer from Gemini API")
+                logger.info("Got answer from OpenAI API")
 
         # If still no answer, fallback
         if not answer:
@@ -213,7 +232,7 @@ def chat():
             'question': question,
             'language': language,
             'timestamp': timestamp,
-            'source': 'gemini_api' if 'gemini' in str(answer).lower() else 'local_model'
+            'source': 'openai_api' if answer and 'openai' in str(answer).lower() else 'local_model'
         })
     except Exception as e:
         logger.error(f"Error in chat endpoint: {e}")
