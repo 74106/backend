@@ -120,15 +120,15 @@ Provide legal advice:""",
 legal_advisor = LegalAdviceGenerator()
 
 
-def get_openai_answer(question: str) -> str:
-    """Get answer from OpenAI API"""
+def get_deepseek_answer(question: str) -> str:
+    """Get answer from DeepSeek API"""
     try:
-        api_key = os.environ.get('OPENAI_API_KEY')
+        api_key = os.environ.get('DEEPSEEK_API_KEY')
         if not api_key:
-            return "OpenAI API key not set. Set OPENAI_API_KEY environment variable."
+            return "DeepSeek API key not set. Set DEEPSEEK_API_KEY environment variable."
         
-        # OpenAI API endpoint
-        api_url = "https://api.openai.com/v1/chat/completions"
+        # DeepSeek API endpoint
+        api_url = "https://api.deepseek.com/v1/chat/completions"
         
         # Create legal context prompt
         legal_prompt = legal_advisor.get_legal_prompt(question, 'en')
@@ -139,7 +139,7 @@ def get_openai_answer(question: str) -> str:
         }
         
         payload = {
-            "model": "gpt-3.5-turbo",
+            "model": "deepseek-chat",
             "messages": [
                 {
                     "role": "system",
@@ -165,11 +165,11 @@ def get_openai_answer(question: str) -> str:
             else:
                 return "I understand you're asking about a legal matter. Please consult a qualified legal professional for specific advice."
         else:
-            logger.error(f"OpenAI API returned status {response.status_code}: {response.text}")
+            logger.error(f"DeepSeek API returned status {response.status_code}: {response.text}")
             return get_fallback_legal_response(question)
             
     except Exception as e:
-        logger.error(f"OpenAI API error: {str(e)}")
+        logger.error(f"DeepSeek API error: {str(e)}")
         return get_fallback_legal_response(question)
 
 def get_fallback_legal_response(question: str) -> str:
@@ -265,24 +265,24 @@ Remember: FIR is your right for cognizable offenses. Don't hesitate to seek lega
 - Child Helpline: 1098"""
 
 def get_legal_advice(question: str, language: str = 'en') -> str:
-    """Main function to get legal advice using intelligent fallback system"""
+    """Main function to get legal advice using DeepSeek API"""
     if not question or not question.strip():
         return "Could you please provide a question that addresses a specific legal issue."
     
     try:
-        # Try OpenAI API first
-        openai_answer = get_openai_answer(question.strip())
+        # Use DeepSeek API
+        deepseek_answer = get_deepseek_answer(question.strip())
         
-        # If OpenAI failed, use intelligent fallback
-        if not openai_answer or openai_answer.startswith("OpenAI API key not set") or openai_answer.startswith("Error"):
+        # If DeepSeek failed, use intelligent fallback
+        if not deepseek_answer or deepseek_answer.startswith("DeepSeek API key not set") or deepseek_answer.startswith("Error"):
             return get_intelligent_legal_response(question, language)
         
         # Translate if needed
         if language != 'en':
-            translated_answer = legal_advisor.translate_text(openai_answer, language)
+            translated_answer = legal_advisor.translate_text(deepseek_answer, language)
             return translated_answer
         
-        return openai_answer
+        return deepseek_answer
         
     except Exception:
         # Fallback to intelligent response
