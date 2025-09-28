@@ -120,15 +120,15 @@ Provide legal advice:""",
 legal_advisor = LegalAdviceGenerator()
 
 
-def get_deepseek_answer(question: str) -> str:
-    """Get answer from DeepSeek API"""
+def get_cohere_answer(question: str) -> str:
+    """Get answer from Cohere API"""
     try:
-        api_key = os.environ.get('DEEPSEEK_API_KEY')
+        api_key = os.environ.get('COHERE_API_KEY')
         if not api_key:
-            return "DeepSeek API key not set. Set DEEPSEEK_API_KEY environment variable."
+            return "Cohere API key not set. Set COHERE_API_KEY environment variable."
         
-        # DeepSeek API endpoint
-        api_url = "https://api.deepseek.com/v1/chat/completions"
+        # Cohere API endpoint
+        api_url = "https://api.cohere.ai/v1/chat"
         
         # Create legal context prompt
         legal_prompt = legal_advisor.get_legal_prompt(question, 'en')
@@ -139,37 +139,31 @@ def get_deepseek_answer(question: str) -> str:
         }
         
         payload = {
-            "model": "deepseek-chat",
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You are a helpful legal AI assistant specializing in Indian law. Provide clear, practical legal advice based on Indian legal framework. Focus on relevant Indian laws, practical steps, legal remedies, and when to consult a lawyer. Always include disclaimers about consulting qualified legal professionals for specific cases."
-                },
-                {
-                    "role": "user", 
-                    "content": legal_prompt
-                }
-            ],
+            "model": "command-a-03-2025",
+            "message": legal_prompt,
             "max_tokens": 1000,
             "temperature": 0.7,
-            "top_p": 0.9
+            "p": 0.9,
+            "k": 0,
+            "stop_sequences": [],
+            "stream": False
         }
         
         response = requests.post(api_url, headers=headers, json=payload, timeout=30)
         
         if response.status_code == 200:
             data = response.json()
-            if 'choices' in data and len(data['choices']) > 0:
-                answer = data['choices'][0]['message']['content']
-                return answer.strip()
+            if 'text' in data:
+                answer = data['text'].strip()
+                return answer
             else:
                 return "I understand you're asking about a legal matter. Please consult a qualified legal professional for specific advice."
         else:
-            logger.error(f"DeepSeek API returned status {response.status_code}: {response.text}")
+            logger.error(f"Cohere API returned status {response.status_code}: {response.text}")
             return get_fallback_legal_response(question)
             
     except Exception as e:
-        logger.error(f"DeepSeek API error: {str(e)}")
+        logger.error(f"Cohere API error: {str(e)}")
         return get_fallback_legal_response(question)
 
 def get_fallback_legal_response(question: str) -> str:
@@ -265,24 +259,24 @@ Remember: FIR is your right for cognizable offenses. Don't hesitate to seek lega
 - Child Helpline: 1098"""
 
 def get_legal_advice(question: str, language: str = 'en') -> str:
-    """Main function to get legal advice using DeepSeek API"""
+    """Main function to get legal advice using Cohere API"""
     if not question or not question.strip():
         return "Could you please provide a question that addresses a specific legal issue."
     
     try:
-        # Use DeepSeek API
-        deepseek_answer = get_deepseek_answer(question.strip())
+        # Use Cohere API
+        cohere_answer = get_cohere_answer(question.strip())
         
-        # If DeepSeek failed, use intelligent fallback
-        if not deepseek_answer or deepseek_answer.startswith("DeepSeek API key not set") or deepseek_answer.startswith("Error"):
+        # If Cohere failed, use intelligent fallback
+        if not cohere_answer or cohere_answer.startswith("Cohere API key not set") or cohere_answer.startswith("Error"):
             return get_intelligent_legal_response(question, language)
         
         # Translate if needed
         if language != 'en':
-            translated_answer = legal_advisor.translate_text(deepseek_answer, language)
+            translated_answer = legal_advisor.translate_text(cohere_answer, language)
             return translated_answer
         
-        return deepseek_answer
+        return cohere_answer
         
     except Exception:
         # Fallback to intelligent response
