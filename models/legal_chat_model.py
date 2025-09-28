@@ -1,6 +1,8 @@
 import re
 from typing import Dict, List, Optional
 import os
+import requests
+import json
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -12,13 +14,6 @@ try:
     _translator_available = True
 except ImportError:
     _translator_available = False
-
-# Import Gemini library
-try:
-    import google.generativeai as genai
-    _gemini_available = True
-except ImportError:
-    _gemini_available = False
 
 class LegalAdviceGenerator:
     """Advanced legal advice generator with multi-language support using deep-translator"""
@@ -125,48 +120,372 @@ Provide legal advice:""",
 legal_advisor = LegalAdviceGenerator()
 
 
-def get_gemini_answer(question: str) -> str:
-    """Get answer from Google Gemini API"""
-    if not _gemini_available:
-        return "Gemini not available. Install: pip install google-generativeai"
-    
+def get_openai_answer(question: str) -> str:
+    """Get answer from OpenAI API"""
     try:
-        api_key = os.environ.get('GEMINI_API_KEY')
+        api_key = os.environ.get('OPENAI_API_KEY')
         if not api_key:
-            return "Gemini API key not set. Set GEMINI_API_KEY environment variable."
+            return "OpenAI API key not set. Set OPENAI_API_KEY environment variable."
         
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.0-flash')
+        # OpenAI API endpoint
+        api_url = "https://api.openai.com/v1/chat/completions"
         
         # Create legal context prompt
         legal_prompt = legal_advisor.get_legal_prompt(question, 'en')
         
-        response = model.generate_content(legal_prompt)
-        return response.text
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
         
+        payload = {
+            "model": "gpt-3.5-turbo",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a helpful legal AI assistant specializing in Indian law. Provide clear, practical legal advice based on Indian legal framework. Focus on relevant Indian laws, practical steps, legal remedies, and when to consult a lawyer. Always include disclaimers about consulting qualified legal professionals for specific cases."
+                },
+                {
+                    "role": "user", 
+                    "content": legal_prompt
+                }
+            ],
+            "max_tokens": 1000,
+            "temperature": 0.7,
+            "top_p": 0.9
+        }
+        
+        response = requests.post(api_url, headers=headers, json=payload, timeout=30)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if 'choices' in data and len(data['choices']) > 0:
+                answer = data['choices'][0]['message']['content']
+                return answer.strip()
+            else:
+                return "I understand you're asking about a legal matter. Please consult a qualified legal professional for specific advice."
+        else:
+            logger.error(f"OpenAI API returned status {response.status_code}: {response.text}")
+            return get_fallback_legal_response(question)
+            
     except Exception as e:
-        return f"Gemini API error: {str(e)}"
+        logger.error(f"OpenAI API error: {str(e)}")
+        return get_fallback_legal_response(question)
+
+def get_fallback_legal_response(question: str) -> str:
+    """Provide a fallback legal response when API is not available"""
+    question_lower = question.lower()
+    
+    # Simple keyword-based responses
+    if any(word in question_lower for word in ['tenant', 'rent', 'eviction', 'landlord']):
+        return """As a tenant, you have several important rights under Indian law:
+
+1. **Right to peaceful enjoyment**: Your landlord cannot disturb your peaceful possession of the property.
+
+2. **Right to notice**: For eviction, landlords must provide proper notice as per state laws.
+
+3. **Right to essential services**: Landlords must maintain essential services like water, electricity.
+
+4. **Right to privacy**: Landlords cannot enter your premises without notice.
+
+5. **Protection against arbitrary rent increases**: Rent increases must follow legal procedures.
+
+Please note: Laws vary by state. For specific situations, consult a local lawyer."""
+
+    elif any(word in question_lower for word in ['fir', 'police', 'complaint', 'crime']):
+        return """For filing an FIR (First Information Report) in India:
+
+1. **Go to the nearest police station** where the incident occurred.
+
+2. **Provide detailed information** about the incident, including:
+   - Date, time, and location
+   - Description of what happened
+   - Names of people involved
+   - Any evidence or witnesses
+
+3. **Get acknowledgment**: The police must give you a copy of the FIR.
+
+4. **Follow up**: Keep track of the investigation progress.
+
+5. **Legal remedies**: If police refuse to file FIR, you can approach the Superintendent of Police or file a complaint with the Magistrate.
+
+Remember: FIR is your right for cognizable offenses. Don't hesitate to seek legal help if needed."""
+
+    elif any(word in question_lower for word in ['divorce', 'marriage', 'custody', 'alimony']):
+        return """For family law matters in India:
+
+**Divorce Process:**
+1. **Grounds for divorce**: Adultery, cruelty, desertion, conversion, mental disorder, etc.
+2. **Mutual consent**: Both parties can file for divorce by mutual consent.
+3. **Court procedures**: File petition in family court with proper documentation.
+
+**Child Custody:**
+1. **Best interest of child**: Courts prioritize child's welfare.
+2. **Joint custody**: Both parents can share custody.
+3. **Visitation rights**: Non-custodial parent has visitation rights.
+
+**Important**: Family law is complex and varies by personal laws (Hindu, Muslim, Christian, etc.). Consult a family lawyer for specific advice."""
+
+    elif any(word in question_lower for word in ['contract', 'agreement', 'breach', 'damages']):
+        return """For contract-related issues in India:
+
+**Essential Elements of a Valid Contract:**
+1. **Offer and acceptance**
+2. **Consideration** (something of value)
+3. **Competent parties**
+4. **Free consent**
+5. **Lawful object**
+
+**Breach of Contract Remedies:**
+1. **Specific performance**: Court can order performance of contract
+2. **Damages**: Monetary compensation for losses
+3. **Injunction**: Court order to stop certain actions
+4. **Rescission**: Cancellation of contract
+
+**Important**: Contract law is governed by the Indian Contract Act, 1872. For complex matters, consult a contract lawyer."""
+
+    else:
+        return """I understand you're seeking legal advice. Here's some general guidance:
+
+**General Legal Rights in India:**
+1. **Right to legal aid**: Free legal aid is available for those who cannot afford lawyers
+2. **Right to fair trial**: Everyone has the right to a fair and speedy trial
+3. **Right to legal representation**: You have the right to be represented by a lawyer
+4. **Right to information**: You can access public information under RTI Act
+
+**Important Disclaimer**: 
+- This is general information only
+- Laws vary by state and personal circumstances
+- Always consult a qualified lawyer for specific legal advice
+- For urgent matters, contact legal aid services immediately
+
+**Emergency Contacts:**
+- Legal Aid: 1800-345-6789
+- Women Helpline: 181
+- Child Helpline: 1098"""
 
 def get_legal_advice(question: str, language: str = 'en') -> str:
-    """Main function to get legal advice with Gemini only (no Grok)"""
+    """Main function to get legal advice using intelligent fallback system"""
     if not question or not question.strip():
         return "Could you please provide a question that addresses a specific legal issue."
     
     try:
-        # Use Gemini only
-        gemini_answer = get_gemini_answer(question.strip())
+        # Try OpenAI API first
+        openai_answer = get_openai_answer(question.strip())
         
-        # If Gemini failed, return fallback
-        if gemini_answer.startswith("Gemini API error") or gemini_answer.startswith("Gemini not available") or gemini_answer.startswith("Gemini API key not set"):
-            return legal_advisor.get_fallback_response(language)
+        # If OpenAI failed, use intelligent fallback
+        if not openai_answer or openai_answer.startswith("OpenAI API key not set") or openai_answer.startswith("Error"):
+            return get_intelligent_legal_response(question, language)
         
         # Translate if needed
         if language != 'en':
-            translated_answer = legal_advisor.translate_text(gemini_answer, language)
+            translated_answer = legal_advisor.translate_text(openai_answer, language)
             return translated_answer
         
-        return gemini_answer
+        return openai_answer
         
     except Exception:
-        # Fallback to simple response
-        return legal_advisor.get_fallback_response(language)
+        # Fallback to intelligent response
+        return get_intelligent_legal_response(question, language)
+
+def get_intelligent_legal_response(question: str, language: str = 'en') -> str:
+    """Provide intelligent legal responses based on question analysis"""
+    question_lower = question.lower()
+    
+    # Enhanced keyword-based responses with more detailed information
+    if any(word in question_lower for word in ['tenant', 'rent', 'eviction', 'landlord', 'lease', 'rental']):
+        response = """**Tenant Rights in India - Comprehensive Guide**
+
+**Key Rights You Have:**
+1. **Right to Peaceful Enjoyment**: Your landlord cannot disturb your peaceful possession without proper notice
+2. **Right to Essential Services**: Landlords must maintain water, electricity, and other essential services
+3. **Right to Privacy**: Landlords cannot enter your premises without 24-hour notice
+4. **Protection from Arbitrary Eviction**: Eviction requires proper legal notice and valid grounds
+5. **Right to Fair Rent**: Rent increases must follow legal procedures and be reasonable
+
+**Important Laws:**
+- **Rent Control Acts** (varies by state)
+- **Transfer of Property Act, 1882**
+- **Model Tenancy Act, 2021** (if adopted by your state)
+
+**What to Do if Your Rights are Violated:**
+1. Document everything (photos, videos, written communications)
+2. Send a legal notice to your landlord
+3. File a complaint with the Rent Control Court
+4. Contact local legal aid services
+
+**Emergency Contacts:**
+- Legal Aid: 1800-345-6789
+- State Legal Services Authority
+
+**⚠️ Important**: Laws vary by state. For specific cases, consult a local property lawyer."""
+
+    elif any(word in question_lower for word in ['fir', 'police', 'complaint', 'crime', 'criminal']):
+        response = """**Filing FIR and Criminal Law in India**
+
+**How to File an FIR:**
+1. **Go to the nearest police station** where the incident occurred
+2. **Provide complete details**: Date, time, location, description of incident
+3. **Get acknowledgment**: Police must give you a copy of the FIR
+4. **Follow up**: Keep track of investigation progress
+
+**Your Rights During FIR Process:**
+- Right to get a copy of FIR free of cost
+- Right to know the status of investigation
+- Right to legal representation
+- Right to file complaint if police refuse to register FIR
+
+**If Police Refuse to File FIR:**
+1. Approach the Superintendent of Police (SP)
+2. File a complaint with the Magistrate under Section 156(3) CrPC
+3. Send a written complaint to the State Human Rights Commission
+
+**Important Laws:**
+- **Criminal Procedure Code (CrPC)**
+- **Indian Penal Code (IPC)**
+- **Protection of Human Rights Act**
+
+**Emergency Contacts:**
+- Police: 100
+- Women Helpline: 181
+- Child Helpline: 1098
+
+**⚠️ Important**: For serious crimes, contact a criminal lawyer immediately."""
+
+    elif any(word in question_lower for word in ['divorce', 'marriage', 'custody', 'alimony', 'maintenance']):
+        response = """**Family Law in India - Marriage, Divorce & Custody**
+
+**Divorce Process:**
+1. **Grounds for Divorce**:
+   - Adultery, cruelty, desertion
+   - Conversion to another religion
+   - Mental disorder, communicable disease
+   - Mutual consent (simplest process)
+
+2. **Court Procedures**:
+   - File petition in Family Court
+   - Mediation and counseling (mandatory)
+   - Final hearing and decree
+
+**Child Custody:**
+- **Best Interest of Child** is the primary consideration
+- Both parents can get joint custody
+- Visitation rights for non-custodial parent
+- Child's preference considered (if above 12 years)
+
+**Maintenance/Alimony:**
+- Spouse maintenance based on income and needs
+- Child maintenance until 18 years (or longer if studying)
+- Interim maintenance during proceedings
+
+**Important Laws:**
+- **Hindu Marriage Act, 1955**
+- **Muslim Personal Law**
+- **Special Marriage Act, 1954**
+- **Guardians and Wards Act, 1890**
+
+**⚠️ Important**: Family law varies by religion. Consult a family lawyer for specific advice."""
+
+    elif any(word in question_lower for word in ['contract', 'agreement', 'breach', 'damages', 'employment']):
+        response = """**Contract Law in India**
+
+**Essential Elements of Valid Contract:**
+1. **Offer and Acceptance**
+2. **Consideration** (something of value)
+3. **Competent Parties** (18+ years, sound mind)
+4. **Free Consent** (not under coercion, fraud, misrepresentation)
+5. **Lawful Object** (not illegal or immoral)
+
+**Types of Contracts:**
+- **Employment Contracts**: Governed by labor laws
+- **Service Agreements**: Professional services
+- **Sales Contracts**: Goods and services
+- **Lease Agreements**: Property rental
+
+**Breach of Contract Remedies:**
+1. **Specific Performance**: Court orders performance
+2. **Damages**: Monetary compensation
+3. **Injunction**: Court order to stop certain actions
+4. **Rescission**: Cancellation of contract
+
+**Important Laws:**
+- **Indian Contract Act, 1872**
+- **Sale of Goods Act, 1930**
+- **Industrial Disputes Act, 1947**
+
+**What to Do if Contract is Breached:**
+1. Send legal notice
+2. Try mediation/negotiation
+3. File suit in appropriate court
+4. Seek interim relief if urgent
+
+**⚠️ Important**: Contract law is complex. Consult a contract lawyer for specific cases."""
+
+    elif any(word in question_lower for word in ['consumer', 'refund', 'defective', 'warranty', 'complaint']):
+        response = """**Consumer Rights in India**
+
+**Your Rights as a Consumer:**
+1. **Right to Safety**: Protection from hazardous goods/services
+2. **Right to Information**: Complete information about products
+3. **Right to Choose**: Freedom to select from various options
+4. **Right to be Heard**: Voice complaints and concerns
+5. **Right to Redressal**: Seek compensation for unfair practices
+
+**How to File Consumer Complaint:**
+1. **District Consumer Forum** (up to ₹1 crore)
+2. **State Commission** (₹1 crore to ₹10 crores)
+3. **National Commission** (above ₹10 crores)
+
+**Process:**
+- File complaint with supporting documents
+- Pay nominal fee (₹100-500)
+- Hearing and evidence presentation
+- Order and execution
+
+**Important Laws:**
+- **Consumer Protection Act, 2019**
+- **Competition Act, 2002**
+
+**⚠️ Important**: Keep all receipts and documents. File complaint within 2 years of cause of action."""
+
+    else:
+        response = """**General Legal Guidance for India**
+
+**Your Fundamental Rights:**
+1. **Right to Equality** (Article 14-18)
+2. **Right to Freedom** (Article 19-22)
+3. **Right against Exploitation** (Article 23-24)
+4. **Right to Freedom of Religion** (Article 25-28)
+5. **Cultural and Educational Rights** (Article 29-30)
+6. **Right to Constitutional Remedies** (Article 32)
+
+**Legal Aid Available:**
+- **Free Legal Aid**: For those who cannot afford lawyers
+- **Legal Services Authorities**: At district, state, and national levels
+- **Lok Adalats**: For quick dispute resolution
+
+**Important Legal Resources:**
+- **Supreme Court of India**
+- **High Courts** (state level)
+- **District Courts** (local level)
+- **Consumer Forums**
+- **Family Courts**
+
+**Emergency Legal Contacts:**
+- Legal Aid: 1800-345-6789
+- Women Helpline: 181
+- Child Helpline: 1098
+- Senior Citizen Helpline: 14567
+
+**⚠️ Important Disclaimer**: 
+This is general legal information. Laws are complex and vary by case. Always consult a qualified lawyer for specific legal advice. For urgent matters, contact legal aid services immediately."""
+
+    # Translate if needed
+    if language != 'en':
+        try:
+            translated_response = legal_advisor.translate_text(response, language)
+            return translated_response
+        except:
+            return response
+    
+    return response
