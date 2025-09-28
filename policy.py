@@ -47,7 +47,7 @@ def apply_policy(original_answer: Optional[str], user_question: str, language: s
     if is_identity_question(user_question):
         if language.startswith('hi'):
             return 'मैं कानूनी जानकारी में विशेषज्ञता वाला एक एआई सहायक हूं।'
-        return 'I am an AI assistant specializing in legal information.'
+        return 'I am a legal chat bot'
 
     ans = (original_answer or '').strip()
     lower = ans.lower()
@@ -69,7 +69,7 @@ def apply_policy(original_answer: Optional[str], user_question: str, language: s
     if any(pat in lower for pat in identity_patterns):
         if language.startswith('hi'):
             return 'मैं कानूनी जानकारी में विशेषज्ञता वाला एक एआई सहायक हूं।'
-        return 'I am an AI assistant specializing in legal information.'
+        return 'I am a legal chat bot'
 
     # Ensure answer contains legal-related content
     legal_keywords = ['law', 'legal', 'court', 'police', 'rights', 'complaint', 'fir', 'appeal', 'contract']

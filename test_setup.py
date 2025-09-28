@@ -52,7 +52,7 @@ def test_gemini_api():
     try:
         import requests
         
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
         headers = {"Content-Type": "application/json"}
         payload = {
             "contents": [{"parts": [{"text": "Hello, this is a test message. Please respond with 'API working correctly'."}]}],
