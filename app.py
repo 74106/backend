@@ -100,22 +100,22 @@ def get_current_user():
     except Exception:
         return None
 
-def call_openai_api(prompt, language="en"):
+def call_deepseek_api(prompt, language="en"):
     """
-    Calls the OpenAI API with the given prompt.
+    Calls the DeepSeek API with the given prompt.
     """
-    api_key = os.environ.get("OPENAI_API_KEY")
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
     if not api_key:
-        logger.error("OPENAI_API_KEY not set in environment")
+        logger.error("DEEPSEEK_API_KEY not set in environment")
         return None
 
     if requests is None:
-        logger.error("The 'requests' library is required for OpenAI API calls")
+        logger.error("The 'requests' library is required for DeepSeek API calls")
         return None
 
     try:
-        # OpenAI API endpoint
-        api_url = "https://api.openai.com/v1/chat/completions"
+        # DeepSeek API endpoint
+        api_url = "https://api.deepseek.com/v1/chat/completions"
         
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -123,7 +123,7 @@ def call_openai_api(prompt, language="en"):
         }
         
         payload = {
-            "model": "gpt-3.5-turbo",
+            "model": "deepseek-chat",
             "messages": [
                 {
                     "role": "system",
@@ -149,11 +149,11 @@ def call_openai_api(prompt, language="en"):
             else:
                 return "I understand you're asking about a legal matter. Please consult a qualified legal professional for specific advice."
         else:
-            logger.error(f"OpenAI API returned status {resp.status_code}: {resp.text}")
+            logger.error(f"DeepSeek API returned status {resp.status_code}: {resp.text}")
             return None
             
     except Exception as e:
-        logger.error(f"OpenAI API call failed: {e}")
+        logger.error(f"DeepSeek API call failed: {e}")
         return None
 
 @app.route('/', methods=['GET'])
@@ -204,11 +204,11 @@ def chat():
         except Exception as local_err:
             logger.warning(f"Local legal model failed: {local_err}")
 
-        # If local model failed, try OpenAI API
+        # If local model failed, try DeepSeek API
         if not answer:
-            answer = call_openai_api(question, language)
+            answer = call_deepseek_api(question, language)
             if answer:
-                logger.info("Got answer from OpenAI API")
+                logger.info("Got answer from DeepSeek API")
 
         # If still no answer, fallback
         if not answer:
@@ -232,7 +232,7 @@ def chat():
             'question': question,
             'language': language,
             'timestamp': timestamp,
-            'source': 'openai_api' if answer and 'openai' in str(answer).lower() else 'local_model'
+            'source': 'deepseek_api' if answer and 'deepseek' in str(answer).lower() else 'local_model'
         })
     except Exception as e:
         logger.error(f"Error in chat endpoint: {e}")
