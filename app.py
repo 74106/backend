@@ -100,55 +100,7 @@ def get_current_user():
     except Exception:
         return None
 
-def call_cohere_api(prompt, language="en"):
-    """
-    Calls the Cohere API with the given prompt.
-    """
-    api_key = os.environ.get("COHERE_API_KEY")
-    if not api_key:
-        logger.error("COHERE_API_KEY not set in environment")
-        return None
-
-    if requests is None:
-        logger.error("The 'requests' library is required for Cohere API calls")
-        return None
-
-    try:
-        # Cohere API endpoint
-        api_url = "https://api.cohere.ai/v1/chat"
-        
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "model": "command-a-03-2025",
-            "message": prompt,
-            "max_tokens": 1000,
-            "temperature": 0.7,
-            "p": 0.9,
-            "k": 0,
-            "stop_sequences": [],
-            "stream": False
-        }
-        
-        resp = requests.post(api_url, headers=headers, json=payload, timeout=30)
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            if 'text' in data:
-                answer = data['text'].strip()
-                return answer
-            else:
-                return "I understand you're asking about a legal matter. Please consult a qualified legal professional for specific advice."
-        else:
-            logger.error(f"Cohere API returned status {resp.status_code}: {resp.text}")
-            return None
-            
-    except Exception as e:
-        logger.error(f"Cohere API call failed: {e}")
-        return None
+ 
 
 @app.route('/', methods=['GET'])
 def root():
@@ -198,11 +150,7 @@ def chat():
         except Exception as local_err:
             logger.warning(f"Local legal model failed: {local_err}")
 
-        # If local model failed, try Cohere API
-        if not answer:
-            answer = call_cohere_api(question, language)
-            if answer:
-                logger.info("Got answer from Cohere API")
+        # If local model failed, nothing else to try (Gemini handled in model)
 
         # If still no answer, fallback
         if not answer:
