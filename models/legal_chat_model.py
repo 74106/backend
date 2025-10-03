@@ -120,47 +120,52 @@ Provide legal advice:""",
 legal_advisor = LegalAdviceGenerator()
 
 
-def get_groq_answer(question: str) -> str:
-    """Get answer from Groq (OpenAI-compatible) Chat Completions API"""
+def get_gemini_answer(question: str) -> str:
+    """Get answer from Google Gemini via REST API"""
     try:
-        api_key = os.environ.get('GROQ_API_KEY')
+        api_key = os.environ.get('GEMINI_API_KEY')
         if not api_key:
-            return "Groq API key not set. Set GROQ_API_KEY environment variable."
+            return "Gemini API key not set. Set GEMINI_API_KEY environment variable."
 
-        api_url = "https://api.groq.com/openai/v1/chat/completions"
+        # Endpoint and model selection (flash by default for latency/cost)
+        model = os.environ.get('GEMINI_MODEL', 'gemini-1.5-flash')
+        api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
 
-        # Create legal context prompt
         legal_prompt = legal_advisor.get_legal_prompt(question, 'en')
 
         headers = {
-            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
 
         payload = {
-            "model": os.environ.get('GROQ_MODEL', 'llama-3.1-70b-versatile'),
-            "messages": [
-                {"role": "system", "content": "You are a helpful legal AI for Indian law. Answer clearly and practically. If unsure, advise consulting a qualified lawyer."},
-                {"role": "user", "content": legal_prompt},
-            ],
-            "temperature": 0.5,
-            "max_tokens": 1000,
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [
+                        {"text": "You are a helpful legal AI for Indian law. Answer clearly and practically. If unsure, advise consulting a qualified lawyer."},
+                        {"text": legal_prompt}
+                    ]
+                }
+            ]
         }
 
         response = requests.post(api_url, headers=headers, json=payload, timeout=30)
-
         if response.status_code == 200:
             data = response.json()
             try:
-                content = data["choices"][0]["message"]["content"].strip()
-                return content
+                candidates = data.get("candidates") or []
+                if not candidates:
+                    return get_fallback_legal_response(question)
+                parts = candidates[0].get("content", {}).get("parts", [])
+                if not parts:
+                    return get_fallback_legal_response(question)
+                return (parts[0].get("text") or "").strip() or get_fallback_legal_response(question)
             except Exception:
-                return "I understand you're asking about a legal matter. Please consult a qualified legal professional for specific advice."
+                return get_fallback_legal_response(question)
         else:
-            # Surface minimal error context in logs only
             try:
-                from app import logger  # lazy import to avoid cycles at top-level
-                logger.error(f"Groq API returned status {response.status_code}: {response.text}")
+                from app import logger
+                logger.error(f"Gemini API returned status {response.status_code}: {response.text}")
             except Exception:
                 pass
             return get_fallback_legal_response(question)
@@ -168,56 +173,14 @@ def get_groq_answer(question: str) -> str:
     except Exception as e:
         try:
             from app import logger
-            logger.error(f"Groq API error: {str(e)}")
+            logger.error(f"Gemini API error: {str(e)}")
         except Exception:
             pass
         return get_fallback_legal_response(question)
 
-def get_cohere_answer(question: str) -> str:
-    """Get answer from Cohere API"""
-    try:
-        api_key = os.environ.get('COHERE_API_KEY')
-        if not api_key:
-            return "Cohere API key not set. Set COHERE_API_KEY environment variable."
-        
-        # Cohere API endpoint
-        api_url = "https://api.cohere.ai/v1/chat"
-        
-        # Create legal context prompt
-        legal_prompt = legal_advisor.get_legal_prompt(question, 'en')
-        
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "model": "command-a-03-2025",
-            "message": legal_prompt,
-            "max_tokens": 1000,
-            "temperature": 0.7,
-            "p": 0.9,
-            "k": 0,
-            "stop_sequences": [],
-            "stream": False
-        }
-        
-        response = requests.post(api_url, headers=headers, json=payload, timeout=30)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if 'text' in data:
-                answer = data['text'].strip()
-                return answer
-            else:
-                return "I understand you're asking about a legal matter. Please consult a qualified legal professional for specific advice."
-        else:
-            logger.error(f"Cohere API returned status {response.status_code}: {response.text}")
-            return get_fallback_legal_response(question)
-            
-    except Exception as e:
-        logger.error(f"Cohere API error: {str(e)}")
-        return get_fallback_legal_response(question)
+ 
+
+ 
 
 def get_fallback_legal_response(question: str) -> str:
     """Provide a fallback legal response when API is not available"""
@@ -312,26 +275,17 @@ Remember: FIR is your right for cognizable offenses. Don't hesitate to seek lega
 - Child Helpline: 1098"""
 
 def get_legal_advice(question: str, language: str = 'en') -> str:
-    """Main function to get legal advice using Groq first, then Cohere, then fallback"""
+    """Main function to get legal advice using Gemini first, then fallback"""
     if not question or not question.strip():
         return "Could you please provide a question that addresses a specific legal issue."
     
     try:
-        # Try Groq first
-        groq_answer = get_groq_answer(question.strip())
-
-        use_groq = bool(groq_answer) and not groq_answer.startswith("Groq API key not set") and not groq_answer.startswith("Error")
-        if use_groq:
+        # Try Gemini first
+        gemini_answer = get_gemini_answer(question.strip())
+        if gemini_answer and not gemini_answer.startswith("Gemini API key not set") and not gemini_answer.startswith("Error"):
             if language != 'en':
-                return legal_advisor.translate_text(groq_answer, language)
-            return groq_answer
-
-        # If Groq failed, try Cohere
-        cohere_answer = get_cohere_answer(question.strip())
-        if cohere_answer and not cohere_answer.startswith("Cohere API key not set") and not cohere_answer.startswith("Error"):
-            if language != 'en':
-                return legal_advisor.translate_text(cohere_answer, language)
-            return cohere_answer
+                return legal_advisor.translate_text(gemini_answer, language)
+            return gemini_answer
 
         # Fallback to intelligent response
         return get_intelligent_legal_response(question, language)
