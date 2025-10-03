@@ -127,9 +127,14 @@ def get_gemini_answer(question: str) -> str:
         if not api_key:
             return "Gemini API key not set. Set GEMINI_API_KEY environment variable."
 
-        # Endpoint and model selection (flash by default for latency/cost)
-        model = os.environ.get('GEMINI_MODEL', 'gemini-1.5-flash')
-        api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        # Endpoint and model selection (use v1 and latest models)
+        primary_model = os.environ.get('GEMINI_MODEL', 'gemini-1.5-flash-latest')
+        model_candidates = [
+            primary_model,
+            'gemini-1.5-pro-latest',
+            'gemini-1.5-flash',
+            'gemini-1.0-pro'
+        ]
 
         legal_prompt = legal_advisor.get_legal_prompt(question, 'en')
 
@@ -149,26 +154,38 @@ def get_gemini_answer(question: str) -> str:
             ]
         }
 
-        response = requests.post(api_url, headers=headers, json=payload, timeout=30)
-        if response.status_code == 200:
-            data = response.json()
-            try:
-                candidates = data.get("candidates") or []
-                if not candidates:
-                    return get_fallback_legal_response(question)
-                parts = candidates[0].get("content", {}).get("parts", [])
-                if not parts:
-                    return get_fallback_legal_response(question)
-                return (parts[0].get("text") or "").strip() or get_fallback_legal_response(question)
-            except Exception:
-                return get_fallback_legal_response(question)
-        else:
-            try:
-                from app import logger
-                logger.error(f"Gemini API returned status {response.status_code}: {response.text}")
-            except Exception:
-                pass
-            return get_fallback_legal_response(question)
+        last_error_text = None
+        for model in model_candidates:
+            api_url = f"https://generativelanguage.googleapis.com/v1/models/{model}:generateContent?key={api_key}"
+            response = requests.post(api_url, headers=headers, json=payload, timeout=30)
+            if response.status_code == 200:
+                data = response.json()
+                try:
+                    candidates = data.get("candidates") or []
+                    if not candidates:
+                        continue
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    if not parts:
+                        continue
+                    text = (parts[0].get("text") or "").strip()
+                    if text:
+                        return text
+                    # if text empty, try next model
+                    continue
+                except Exception:
+                    continue
+            else:
+                last_error_text = f"{response.status_code}: {response.text}"
+                # try next model
+                continue
+
+        # If all models failed
+        try:
+            from app import logger
+            logger.error(f"Gemini API failed for all candidate models. Last error: {last_error_text}")
+        except Exception:
+            pass
+        return get_fallback_legal_response(question)
 
     except Exception as e:
         try:
