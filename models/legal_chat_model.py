@@ -120,6 +120,59 @@ Provide legal advice:""",
 legal_advisor = LegalAdviceGenerator()
 
 
+def get_groq_answer(question: str) -> str:
+    """Get answer from Groq (OpenAI-compatible) Chat Completions API"""
+    try:
+        api_key = os.environ.get('GROQ_API_KEY')
+        if not api_key:
+            return "Groq API key not set. Set GROQ_API_KEY environment variable."
+
+        api_url = "https://api.groq.com/openai/v1/chat/completions"
+
+        # Create legal context prompt
+        legal_prompt = legal_advisor.get_legal_prompt(question, 'en')
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        payload = {
+            "model": os.environ.get('GROQ_MODEL', 'llama-3.1-70b-versatile'),
+            "messages": [
+                {"role": "system", "content": "You are a helpful legal AI for Indian law. Answer clearly and practically. If unsure, advise consulting a qualified lawyer."},
+                {"role": "user", "content": legal_prompt},
+            ],
+            "temperature": 0.5,
+            "max_tokens": 1000,
+        }
+
+        response = requests.post(api_url, headers=headers, json=payload, timeout=30)
+
+        if response.status_code == 200:
+            data = response.json()
+            try:
+                content = data["choices"][0]["message"]["content"].strip()
+                return content
+            except Exception:
+                return "I understand you're asking about a legal matter. Please consult a qualified legal professional for specific advice."
+        else:
+            # Surface minimal error context in logs only
+            try:
+                from app import logger  # lazy import to avoid cycles at top-level
+                logger.error(f"Groq API returned status {response.status_code}: {response.text}")
+            except Exception:
+                pass
+            return get_fallback_legal_response(question)
+
+    except Exception as e:
+        try:
+            from app import logger
+            logger.error(f"Groq API error: {str(e)}")
+        except Exception:
+            pass
+        return get_fallback_legal_response(question)
+
 def get_cohere_answer(question: str) -> str:
     """Get answer from Cohere API"""
     try:
@@ -259,24 +312,29 @@ Remember: FIR is your right for cognizable offenses. Don't hesitate to seek lega
 - Child Helpline: 1098"""
 
 def get_legal_advice(question: str, language: str = 'en') -> str:
-    """Main function to get legal advice using Cohere API"""
+    """Main function to get legal advice using Groq first, then Cohere, then fallback"""
     if not question or not question.strip():
         return "Could you please provide a question that addresses a specific legal issue."
     
     try:
-        # Use Cohere API
+        # Try Groq first
+        groq_answer = get_groq_answer(question.strip())
+
+        use_groq = bool(groq_answer) and not groq_answer.startswith("Groq API key not set") and not groq_answer.startswith("Error")
+        if use_groq:
+            if language != 'en':
+                return legal_advisor.translate_text(groq_answer, language)
+            return groq_answer
+
+        # If Groq failed, try Cohere
         cohere_answer = get_cohere_answer(question.strip())
-        
-        # If Cohere failed, use intelligent fallback
-        if not cohere_answer or cohere_answer.startswith("Cohere API key not set") or cohere_answer.startswith("Error"):
-            return get_intelligent_legal_response(question, language)
-        
-        # Translate if needed
-        if language != 'en':
-            translated_answer = legal_advisor.translate_text(cohere_answer, language)
-            return translated_answer
-        
-        return cohere_answer
+        if cohere_answer and not cohere_answer.startswith("Cohere API key not set") and not cohere_answer.startswith("Error"):
+            if language != 'en':
+                return legal_advisor.translate_text(cohere_answer, language)
+            return cohere_answer
+
+        # Fallback to intelligent response
+        return get_intelligent_legal_response(question, language)
         
     except Exception:
         # Fallback to intelligent response
