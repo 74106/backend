@@ -29,10 +29,10 @@ class LegalAdviceGenerator:
             'te': 'te',  # Telugu
             'mr': 'mr',  # Marathi
             'gu': 'gu',  # Gujarati
-            'kn': 'kn',  # Kannada
+            'kn': 'kn',  # Konkani
             'ml': 'ml',  # Malayalam
             'pa': 'pa',  # Punjabi
-            'ka': 'ka',  # kannada 
+            'ka': 'ka',  # Kannada 
         }
         
         # Legal context prompts for AI models
@@ -145,9 +145,8 @@ def get_gemini_answer(question: str) -> str:
         primary_model = os.environ.get('GEMINI_MODEL', 'gemini-2.0-flash-exp')
         model_candidates = [
             primary_model,
+            'gemini-2.5-flash-exp',
             'gemini-2.0-flash-exp',
-            'gemini-1.5-pro-latest',
-            'gemini-1.5-flash-latest'
         ]
 
         legal_prompt = legal_advisor.get_legal_prompt(question, 'en')
