@@ -39,9 +39,11 @@ def apply_policy(original_answer: Optional[str], user_question: str, language: s
     - If user asks about identity, return fixed identity sentence.
     - If user's question is not legal, refuse.
     - Sanitize model output to avoid alternative identity claims.
-    - Ensure answer contains legal keywords, else refuse.
+    - Ensure answer which contains legal keywords, else refuse.
     - Maintain a Formal and Neutral Tone.
     - Request Clarification for Ambiguous Queries.
+    - Don't give false information as per old laws, use new laws as of date in India.
+    - Use the data of laws provided online, law books to provide the answer to the question of the user.
     """
     # Identity question -> fixed identity
     if is_identity_question(user_question):
@@ -84,3 +86,4 @@ def test_apply_policy_allows_definitions():
     model_out = 'An FIR is a First Information Report, a written document prepared by police when they receive information about a cognizable offence.'
     res = apply_policy(model_out, 'What is FIR?', language='en')
     assert 'FIR' in res and 'Report' in res
+
