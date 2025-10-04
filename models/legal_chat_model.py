@@ -127,13 +127,13 @@ def get_gemini_answer(question: str) -> str:
         if not api_key:
             return "Gemini API key not set. Set GEMINI_API_KEY environment variable."
 
-        # Endpoint and model selection (use v1 and latest models)
-        primary_model = os.environ.get('GEMINI_MODEL', 'gemini-1.5-flash-latest')
+        # Endpoint and model selection (use v1beta and Gemini 2.0 models)
+        primary_model = os.environ.get('GEMINI_MODEL', 'gemini-2.0-flash-exp')
         model_candidates = [
             primary_model,
+            'gemini-2.0-flash-exp',
             'gemini-1.5-pro-latest',
-            'gemini-1.5-flash',
-            'gemini-1.0-pro'
+            'gemini-1.5-flash-latest'
         ]
 
         legal_prompt = legal_advisor.get_legal_prompt(question, 'en')
@@ -156,7 +156,7 @@ def get_gemini_answer(question: str) -> str:
 
         last_error_text = None
         for model in model_candidates:
-            api_url = f"https://generativelanguage.googleapis.com/v1/models/{model}:generateContent?key={api_key}"
+            api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
             response = requests.post(api_url, headers=headers, json=payload, timeout=30)
             if response.status_code == 200:
                 data = response.json()
