@@ -38,12 +38,19 @@ class LegalAdviceGenerator:
         # Legal context prompts for AI models
         self.legal_prompts = {
             'en': """You are a legal AI assistant specializing in Indian law. Provide clear, practical legal advice based on Indian legal framework. Focus on:
-1. Relevant Indian laws and regulations
+1. Relevant Indian laws and regulations (BNS, BNSS, BSA, Constitution, etc.)
 2. Practical steps the person can take
 3. Available legal remedies and procedures
 4. Important deadlines and time limits
 5. When to consult a lawyer
 6. Available legal aid resources
+
+IMPORTANT: Always reference the current Indian legal framework:
+- Bharatiya Nyaya Sanhita (BNS), 2023 (replaces IPC)
+- Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023 (replaces CrPC)
+- Bharatiya Sakshya Adhiniyam (BSA), 2023 (replaces Evidence Act)
+
+Always cite specific laws, sections, or articles when providing legal information. If referencing criminal law, use BNS instead of IPC.
 
 Keep responses helpful, accurate, and actionable. If you're unsure about specific legal details, recommend consulting a qualified lawyer.
 
@@ -52,12 +59,19 @@ Question: {question}
 Provide legal advice:""",
             
             'hi': """आप भारतीय कानून में विशेषज्ञता रखने वाले कानूनी AI सहायक हैं। भारतीय कानूनी ढांचे के आधार पर स्पष्ट, व्यावहारिक कानूनी सलाह दें। इन पर ध्यान दें:
-1. प्रासंगिक भारतीय कानून और नियम
+1. प्रासंगिक भारतीय कानून और नियम (BNS, BNSS, BSA, संविधान, आदि)
 2. व्यक्ति द्वारा उठाए जा सकने वाले व्यावहारिक कदम
 3. उपलब्ध कानूनी उपचार और प्रक्रियाएं
 4. महत्वपूर्ण समय सीमाएं
 5. वकील से कब सलाह लें
 6. उपलब्ध कानूनी सहायता संसाधन
+
+महत्वपूर्ण: हमेशा वर्तमान भारतीय कानूनी ढांचे का संदर्भ दें:
+- भारतीय न्याय संहिता (BNS), 2023 (IPC का स्थान लेता है)
+- भारतीय नागरिक सुरक्षा संहिता (BNSS), 2023 (CrPC का स्थान लेता है)
+- भारतीय साक्ष्य अधिनियम (BSA), 2023 (Evidence Act का स्थान लेता है)
+
+कानूनी जानकारी देते समय हमेशा विशिष्ट कानूनों, धाराओं या अनुच्छेदों का उल्लेख करें। यदि आपराधिक कानून का संदर्भ दे रहे हैं, तो IPC के बजाय BNS का उपयोग करें।
 
 प्रतिक्रियाएं सहायक, सटीक और कार्रवाई योग्य रखें। यदि आप विशिष्ट कानूनी विवरणों के बारे में अनिश्चित हैं, तो योग्य वकील से सलाह लेने की सिफारिश करें।
 
@@ -147,7 +161,7 @@ def get_gemini_answer(question: str) -> str:
                 {
                     "role": "user",
                     "parts": [
-                        {"text": "You are a helpful legal AI for Indian law. Answer clearly and practically. If unsure, advise consulting a qualified lawyer."},
+                        {"text": "You are a helpful legal AI for Indian law. Answer clearly and practically. Always reference current Indian legal framework (BNS, BNSS, BSA instead of IPC, CrPC, Evidence Act). Cite specific laws and sections. If unsure, advise consulting a qualified lawyer."},
                         {"text": legal_prompt}
                     ]
                 }
@@ -235,6 +249,8 @@ Please note: Laws vary by state. For specific situations, consult a local lawyer
 4. **Follow up**: Keep track of the investigation progress.
 
 5. **Legal remedies**: If police refuse to file FIR, you can approach the Superintendent of Police or file a complaint with the Magistrate.
+
+**Legal Framework**: This process is governed by the Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023, which replaced the Code of Criminal Procedure (CrPC).
 
 Remember: FIR is your right for cognizable offenses. Don't hesitate to seek legal help if needed."""
 
@@ -360,12 +376,12 @@ def get_intelligent_legal_response(question: str, language: str = 'en') -> str:
 
 **If Police Refuse to File FIR:**
 1. Approach the Superintendent of Police (SP)
-2. File a complaint with the Magistrate under Section 156(3) CrPC
+2. File a complaint with the Magistrate under Section 156(3) BNSS
 3. Send a written complaint to the State Human Rights Commission
 
 **Important Laws:**
-- **Criminal Procedure Code (CrPC)**
-- **Indian Penal Code (IPC)**
+- **Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023** (replaces CrPC)
+- **Bharatiya Nyaya Sanhita (BNS), 2023** (replaces IPC)
 - **Protection of Human Rights Act**
 
 **Emergency Contacts:**
