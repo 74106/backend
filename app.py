@@ -158,7 +158,7 @@ def chat():
 
         # Enforce policy/sanitization
         try:
-            sanitized = apply_policy(answer, question)
+            sanitized = apply_policy(answer, question, language)
         except Exception as pol_err:
             logger.error(f"Policy enforcement failed: {pol_err}")
             sanitized = 'I can only provide legal knowledge. Please ask a legal question.'
