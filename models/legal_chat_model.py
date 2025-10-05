@@ -10,7 +10,7 @@ load_dotenv()
 
 # Import translation library
 try:
-    from deeptranslator import GoogleTranslator
+    from deep_translator import GoogleTranslator
     _translator_available = True
 except ImportError:
     _translator_available = False
