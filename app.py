@@ -105,25 +105,124 @@ def get_current_user():
 @app.route('/', methods=['GET'])
 def root():
     html = (
-        "<html><head><title>NyaySetu API</title>"
-        "<style>body{font-family:Segoe UI,Tahoma,Arial,sans-serif;padding:24px;line-height:1.6;}"
+        "<html><head><title>NyaySetu</title>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'/>"
+        "<style>"
+        "body{font-family:Segoe UI,Tahoma,Arial,sans-serif;padding:24px;line-height:1.6;background:#fff;color:#222;}"
         "code{background:#f5f5f5;padding:2px 6px;border-radius:4px;}"
-        ".box{max-width:840px;margin:auto} .endpoint{background:#fafafa;border:1px solid #eee;padding:12px;border-radius:8px;margin:8px 0}"
+        ".box{max-width:980px;margin:auto}"
+        ".grid{display:grid;grid-template-columns:1fr;gap:16px}"
+        "@media(min-width:900px){.grid{grid-template-columns:2fr 1fr}}"
+        ".card{background:#fafafa;border:1px solid #eee;padding:16px;border-radius:12px}"
+        ".button{display:inline-block;padding:12px 16px;border-radius:10px;border:1px solid #ddd;background:#0b5;"
+        "color:#fff;text-decoration:none;margin-right:8px;font-weight:600}"
+        ".button.secondary{background:#2276e3}"
+        ".button.ghost{background:#fff;color:#222;border-color:#bbb}"
+        ".endpoint{background:#fff;border:1px dashed #ddd;padding:10px;border-radius:8px;margin:6px 0}"
+        ".sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}"
+        ".big-nav{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}"
+        ".big-tile{flex:1 1 180px;min-width:180px;border:2px solid #222;border-radius:16px;padding:16px;text-align:center;font-size:18px;"
+        "background:#ffe969}"
         "</style></head><body><div class='box'>"
-        "<h2>NyaySetu Legal Aid API</h2>"
-        "<p>Status: healthy. See <code>/health</code>.</p>"
-        "<h3>Auth</h3>"
-        "<div class='endpoint'><b>POST</b> <code>/auth/register</code> { email, password }</div>"
-        ""
-        "<div class='endpoint'><b>POST</b> <code>/auth/login</code> { email, password }</div>"
-        "<h3>Data</h3>"
-        "<div class='endpoint'><b>POST</b> <code>/chat</code> (Bearer token required)</div>"
-        "<div class='endpoint'><b>POST</b> <code>/generate_form</code> (Bearer token required)</div>"
-        "<div class='endpoint'><b>GET</b> <code>/data/chats</code> ?start&end&language&q</div>"
-        "<div class='endpoint'><b>GET</b> <code>/data/forms</code> ?start&end&form_type&q</div>"
+        "<h1>NyaySetu</h1>"
+        "<p><b>Bridging people to justice.</b> NyaySetu helps citizens ask legal questions, generate forms (FIR, RTI, complaints, appeals), and connect with lawyers for guidance.</p>"
+        "<div class='big-nav'>"
+        "<a class='big-tile' href='#lawyer' aria-label='Book a Lawyer (call or chat)'>🧑‍⚖️ Book a Lawyer</a>"
+        "<a class='big-tile' href='#forms' aria-label='Make a Form (simple)'>📝 Make a Form</a>"
+        "<a class='big-tile' href='#chat' aria-label='Ask a Question'>💬 Ask a Question</a>"
+        "</div>"
+        "<div class='grid'>"
+        "  <div>"
+        "    <div id='lawyer' class='card'>"
+        "      <h2>Book a Lawyer</h2>"
+        "      <p>Choose how you want to connect. We will add phone numbers shortly.</p>"
+        "      <a class='button' id='btnCall' href='javascript:void(0)'>📞 Call a Lawyer</a>"
+        "      <a class='button secondary' id='btnChat' href='javascript:void(0)'>💬 Chat to a Lawyer</a>"
+        "      <p id='lawyerNote' style='margin-top:8px;color:#444'>Numbers coming soon. For now, chat opens a placeholder.</p>"
+        "    </div>"
+        "    <div id='forms' class='card'>"
+        "      <h2>Form Generator</h2>"
+        "      <p>Get simple, guided forms with examples for every field.</p>"
+        "      <div class='endpoint'><b>POST</b> <code>/generate_form</code> (Bearer token required)</div>"
+        "    </div>"
+        "    <div id='chat' class='card'>"
+        "      <h2>Ask a Legal Question</h2>"
+        "      <div class='endpoint'><b>POST</b> <code>/chat</code> (Bearer token required)</div>"
+        "    </div>"
+        "    <div id='pdf' class='card'>"
+        "      <h2>PDF Summariser (for lawyers)</h2>"
+        "      <form id='pdfForm' enctype='multipart/form-data' method='post' action='/tools/summarize_pdf'>"
+        "        <label for='pdfFile'><b>Select PDF:</b></label><br/>"
+        "        <input name='file' id='pdfFile' type='file' accept='application/pdf' required />"
+        "        <button class='button ghost' type='submit'>Summarise PDF</button>"
+        "      </form>"
+        "      <pre id='pdfOut' style='white-space:pre-wrap;background:#fff;border:1px solid #eee;padding:12px;border-radius:8px;margin-top:10px'></pre>"
+        "    </div>"
+        "  </div>"
+        "  <div>"
+        "    <div class='card'>"
+        "      <h3>API Endpoints</h3>"
+        "      <p>Status: healthy. See <code>/health</code>.</p>"
+        "      <h4>Auth</h4>"
+        "      <div class='endpoint'><b>POST</b> <code>/auth/register</code> { email, password }</div>"
+        "      <div class='endpoint'><b>POST</b> <code>/auth/login</code> { email, password }</div>"
+        "      <h4>Data</h4>"
+        "      <div class='endpoint'><b>POST</b> <code>/chat</code></div>"
+        "      <div class='endpoint'><b>POST</b> <code>/generate_form</code></div>"
+        "      <div class='endpoint'><b>GET</b> <code>/data/chats</code> ?start&end&language&q</div>"
+        "      <div class='endpoint'><b>GET</b> <code>/data/forms</code> ?start&end&form_type&q</div>"
+        "    </div>"
+        "  </div>"
+        "</div>"
+        "<script>"
+        "document.getElementById('btnCall').addEventListener('click', function(){alert('Phone numbers will be added by admin soon.');});"
+        "document.getElementById('btnChat').addEventListener('click', function(){alert('Chat with a lawyer coming soon.');});"
+        "document.getElementById('pdfForm').addEventListener('submit', async function(e){e.preventDefault(); const form=new FormData(this); const res=await fetch('/tools/summarize_pdf',{method:'POST', body:form}); const txt=await res.text(); document.getElementById('pdfOut').textContent=txt;});"
+        "</script>"
         "</div></body></html>"
     )
     return make_response(html, 200)
+
+@app.route('/tools/summarize_pdf', methods=['POST'])
+def summarize_pdf():
+    """Very simple PDF summariser: extracts text and returns the first N lines.
+    Intended as a placeholder for lawyers; replace with an LLM-based summary later.
+    """
+    try:
+        if 'file' not in request.files:
+            return make_response('No file uploaded', 400)
+        file = request.files['file']
+        if not file or file.filename.lower().endswith('.pdf') is False:
+            return make_response('Please upload a PDF file', 400)
+
+        # Lazy import to avoid hard dependency during cold start
+        try:
+            import PyPDF2  # type: ignore
+        except Exception:
+            return make_response('PDF support not installed on server', 500)
+
+        reader = PyPDF2.PdfReader(file)
+        extracted: list[str] = []
+        max_pages = min(len(reader.pages), 10)  # safety cap
+        for i in range(max_pages):
+            try:
+                page = reader.pages[i]
+                text = page.extract_text() or ''
+                if text:
+                    extracted.append(text.strip())
+            except Exception:
+                continue
+
+        full_text = "\n".join(extracted).strip()
+        if not full_text:
+            return make_response('Could not extract text from PDF', 200)
+
+        # Naive summary: first 1200 characters
+        preview = full_text[:1200]
+        return make_response(preview, 200)
+    except Exception as e:
+        logger.error(f"Error in summarize_pdf: {e}")
+        return make_response('Internal server error', 500)
 
 @app.route('/health', methods=['GET'])
 def health_check():
