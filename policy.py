@@ -15,6 +15,7 @@ TRUSTED_LEGAL_SOURCES = {
         'evidence_law': 'Bharatiya Sakshya Adhiniyam (BSA), 2023',
         'civil_law': 'Code of Civil Procedure (CPC), 1908',
         'constitutional_law': 'Constitution of India, 1950'
+        'legal_law': 'National Portal of India'
     },
     'secondary_sources': [
         'Supreme Court of India judgments',
@@ -26,6 +27,8 @@ TRUSTED_LEGAL_SOURCES = {
         'Motor Vehicles Act, 1988',
         'Indian Contract Act, 1872',
         'Transfer of Property Act, 1882'
+        'Ministry of Law and Justice'
+        'Law Comission of India'
     ],
     'databases': [
         'Supreme Court of India official website',
@@ -284,3 +287,4 @@ def test_apply_policy_allows_definitions():
     model_out = 'An FIR is a First Information Report, a written document prepared by police when they receive information about a cognizable offence.'
     res = apply_policy(model_out, 'What is FIR?', language='en')
     assert 'FIR' in res and 'Report' in res
+
