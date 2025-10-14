@@ -132,6 +132,51 @@ class LegalFormGenerator:
                 'new_evidence': 'New Evidence Available'
             }
         }
+        
+        # Simple, concrete examples to guide users with low literacy.
+        # Keys mirror section_templates field keys for easy lookup.
+        self.field_examples = {
+            'name': 'e.g., Ramesh Kumar',
+            'address': 'e.g., House No. 12, Ward 4, Jaipur, Rajasthan',
+            'phone': 'e.g., 9876543210',
+            'email': 'e.g., yourname@example.com',
+            'id_proof': 'e.g., Aadhaar 1234-5678-9012',
+            'date_time': 'e.g., 15 Aug 2025, 8:30 PM',
+            'location': 'e.g., Near Bus Stand, Alwar',
+            'description': 'e.g., Briefly describe what happened in simple words',
+            'loss_damage': 'e.g., Broken phone, injury to hand',
+            'witness_names': 'e.g., Sita Devi, Mohan Lal',
+            'witness_addresses': 'e.g., Village Rampur, Tehsil Kotputli',
+            'witness_phones': 'e.g., 9812345678, 9801234567',
+            'documents': 'e.g., Bills, photos, FIR copy',
+            'physical_evidence': 'e.g., Damaged item, clothes',
+            'digital_evidence': 'e.g., WhatsApp chats, call recordings',
+            'citizenship': 'e.g., Indian',
+            'subject': 'e.g., Information about village road repair',
+            'details': 'e.g., Copy of tender and progress reports',
+            'period': 'e.g., Jan 2023 to Dec 2023',
+            'format': 'e.g., Photocopy or PDF via email',
+            'authority_name': 'e.g., Public Works Department, Jaipur',
+            'officer_name': 'e.g., PIO Mr. Sharma',
+            'reason': 'e.g., To ensure proper use of public money',
+            'public_interest': 'e.g., Road is unsafe for villagers',
+            'complaint_details': 'e.g., Shopkeeper overcharged for items',
+            'date_occurred': 'e.g., 10 July 2025',
+            'previous_actions': 'e.g., Spoke to manager on 12 July 2025',
+            'compensation': 'e.g., Refund of Rs. 1500',
+            'action_required': 'e.g., Inspect shop and take action',
+            'timeframe': 'e.g., Within 15 days',
+            'photographs': 'e.g., Photo of the damaged road',
+            'correspondence': 'e.g., Previous emails/letters to authority',
+            'representative': 'e.g., Advocate Meena (optional)',
+            'order_number': 'e.g., Order No. 123/2025',
+            'order_date': 'e.g., 05 June 2025',
+            'issuing_authority': 'e.g., SDM, Jaipur',
+            'order_summary': 'e.g., Brief summary of the original order',
+            'legal_grounds': 'e.g., Section 420 IPC not considered',
+            'errors': 'e.g., Evidence was ignored',
+            'new_evidence': 'e.g., New witness statement dated 01 Aug 2025'
+        }
     
     def generate_form(self, form_type: str, responses: Dict[str, Any]) -> str:
         """Generate a comprehensive legal form"""
@@ -182,7 +227,11 @@ class LegalFormGenerator:
             if field_value:
                 section_content.append(f"{field_label}: {field_value}")
             else:
-                section_content.append(f"{field_label}: _________________")
+                example_hint = self.field_examples.get(field_key)
+                if example_hint:
+                    section_content.append(f"{field_label}: _________________ ({example_hint})")
+                else:
+                    section_content.append(f"{field_label}: _________________")
             
             section_content.append("")
         
@@ -215,4 +264,23 @@ def get_form_fields(form_type: str) -> Dict[str, List[str]]:
     try:
         return form_generator.get_form_fields(form_type)
     except Exception as e:
+        return {}
+
+def get_field_examples(form_type: str) -> Dict[str, Dict[str, str]]:
+    """Return example hints for each field grouped by section for a given form type."""
+    try:
+        if form_type not in form_generator.form_templates:
+            return {}
+        result: Dict[str, Dict[str, str]] = {}
+        for section in form_generator.form_templates[form_type]['sections']:
+            section_fields = form_generator.section_templates.get(section, {})
+            examples_for_section: Dict[str, str] = {}
+            for field_key in section_fields.keys():
+                example = form_generator.field_examples.get(field_key, '')
+                if example:
+                    examples_for_section[field_key] = example
+            if examples_for_section:
+                result[section] = examples_for_section
+        return result
+    except Exception:
         return {}
