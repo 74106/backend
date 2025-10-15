@@ -189,6 +189,10 @@ def summarize_pdf():
     Intended as a placeholder for lawyers; replace with an LLM-based summary later.
     """
     try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': 'Unauthorized'}), 401
+
         if 'file' not in request.files:
             return make_response('No file uploaded', 400)
         file = request.files['file']
