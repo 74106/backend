@@ -258,7 +258,8 @@ def chat():
     try:
         data = request.get_json() or {}
         question = (data.get('question') or '').strip()
-        language = data.get('language') or 'en'
+        # Enforce English-only for now
+        language = 'en'
         if not question:
             return jsonify({'error': 'Question is required'}), 400
 
