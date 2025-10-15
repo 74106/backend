@@ -26,9 +26,6 @@ TRUSTED_LEGAL_SOURCES = {
         'Motor Vehicles Act, 1988',
         'Indian Contract Act, 1872',
         'Transfer of Property Act, 1882'
-        'Ministry of Law and Justice'
-        'Law Comission of India'
-        'National Portal of India'
     ],
     'databases': [
         'Supreme Court of India official website',
@@ -148,11 +145,11 @@ def apply_policy(original_answer: Optional[str], user_question: str, language: s
             ans = _add_source_attribution(ans, language)
         return ans
 
-    # Non-legal user question -> refusal
+    # Non-legal user question -> refusal (we focus on cyber law topics)
     if not is_legal_question(user_question):
         if language.startswith('hi'):
-            return 'मैं केवल कानूनी जानकारी प्रदान कर सकता/सकती हूँ। कृपया एक कानूनी प्रश्न पूछें।'
-        return 'My function is to provide information on legal topics. Please frame your question accordingly.'
+            return 'मैं मुख्यतः साइबर कानून से संबंधित जानकारी प्रदान करता/करती हूँ। कृपया साइबर कानून पर प्रश्न पूछें।'
+        return 'I primarily provide information on cyber law. Please ask a cyber law-related question.'
 
     # Replace or suppress identity mentions
     identity_patterns = [
@@ -164,10 +161,10 @@ def apply_policy(original_answer: Optional[str], user_question: str, language: s
             return 'मैं कानूनी जानकारी में विशेषज्ञता वाला एक एआई सहायक हूं।'
         return 'I am a legal chat bot'
 
-    # Ensure answer contains legal-related content
+    # Ensure answer contains legal/cyber-related content
     legal_keywords = [
         # English keywords
-        'law', 'legal', 'court', 'police', 'rights', 'complaint', 'fir', 'appeal', 'contract', 'bns', 'bnss', 'bsa',
+        'law', 'legal', 'cyber', 'it act', 'information technology act', 'data privacy', 'online fraud', 'phishing', 'social media', 'electronic evidence', 'court', 'police', 'rights', 'complaint', 'fir', 'appeal', 'contract', 'bns', 'bnss', 'bsa',
         # Hindi keywords
         'कानून', 'कानूनी', 'अदालत', 'पुलिस', 'अधिकार', 'शिकायत', 'गिरफ्तार', 'अनुबंध', 'भारतीय न्याय संहिता', 'भारतीय नागरिक सुरक्षा संहिता', 'भारतीय साक्ष्य अधिनियम',
         # Bengali keywords
@@ -287,5 +284,3 @@ def test_apply_policy_allows_definitions():
     model_out = 'An FIR is a First Information Report, a written document prepared by police when they receive information about a cognizable offence.'
     res = apply_policy(model_out, 'What is FIR?', language='en')
     assert 'FIR' in res and 'Report' in res
-
-
