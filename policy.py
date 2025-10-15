@@ -7,32 +7,21 @@ from __future__ import annotations
 
 from typing import Optional
 
-# Trusted legal sources and databases for Indian law
+# Trusted Indian legal sources (English only)
 TRUSTED_LEGAL_SOURCES = {
     'primary_laws': {
         'criminal_law': 'Bharatiya Nyaya Sanhita (BNS), 2023',
         'criminal_procedure': 'Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023', 
         'evidence_law': 'Bharatiya Sakshya Adhiniyam (BSA), 2023',
-        'civil_law': 'Code of Civil Procedure (CPC), 1908',
+        'it_act': 'Information Technology Act, 2000 (as amended)',
         'constitutional_law': 'Constitution of India, 1950'
     },
-    'secondary_sources': [
-        'Supreme Court of India judgments',
-        'High Court judgments',
-        'Legal Services Authorities Act, 1987',
-        'Consumer Protection Act, 2019',
-        'Right to Information Act, 2005',
-        'Protection of Women from Domestic Violence Act, 2005',
-        'Motor Vehicles Act, 1988',
-        'Indian Contract Act, 1872',
-        'Transfer of Property Act, 1882'
-    ],
     'databases': [
         'Supreme Court of India official website',
         'High Court official websites',
         'Ministry of Law and Justice, Government of India',
-        'Legal Information Management and Briefing System (LIMBS)',
-        'National Legal Services Authority (NALSA)'
+        'Indian Cyber Crime Portal (cybercrime.gov.in)',
+        'CERT-In (cert-in.org.in) advisories'
     ]
 }
 
