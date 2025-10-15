@@ -50,6 +50,10 @@ def is_legal_question(text: Optional[str]) -> bool:
         'bsa', 'bharatiya sakshya adhiniyam', 'ipc', 'crpc', 'evidence act',
         'constitution', 'article', 'fundamental rights', 'legal aid', 'advocate', 'lawyer',
         'judgment', 'verdict', 'legal precedent', 'case law', 'statute', 'act', 'section',
+        # Cyber law and safety keywords (treat as legal intent for this app)
+        'cyber', 'cyber crime', 'cybercrime', 'information technology act', 'it act', 'data privacy',
+        'online fraud', 'phishing', 'upi fraud', 'bank fraud', 'sextortion', 'harassment', 'stalking',
+        'electronic evidence', 'social media', 'identity theft', 'ransomware', 'malware', 'hacking'
         ]
     # Short identity-like questions are not legal questions
     if len(t.split()) <= 5 and is_identity_question(t):
@@ -83,8 +87,12 @@ def apply_policy(original_answer: Optional[str], user_question: str, language: s
             ans = _add_source_attribution(ans, language)
         return ans
 
-    # Non-legal user question -> refusal (we focus on cyber law topics)
+    # Non-legal user question -> if cyber-safety topic, provide prevention guidance; else refusal
     if not is_legal_question(user_question):
+        if _is_cyber_question(user_question):
+            guidance = _get_cyber_prevention_guidance(language)
+            # Add source attribution block for consistency
+            return _add_source_attribution(guidance, language)
         if language.startswith('hi'):
             return 'मैं मुख्यतः साइबर कानून से संबंधित जानकारी प्रदान करता/करती हूँ। कृपया साइबर कानून पर प्रश्न पूछें।'
         return 'I primarily provide information on cyber law. Please ask a cyber law-related question.'
@@ -105,6 +113,11 @@ def apply_policy(original_answer: Optional[str], user_question: str, language: s
         'law', 'legal', 'cyber', 'cybercrime', 'it act', 'information technology act', 'data privacy', 'online fraud', 'phishing', 'social media', 'electronic evidence', 'court', 'police', 'rights', 'complaint', 'fir', 'appeal', 'contract', 'bns', 'bnss', 'bsa',
     ]
     if not any(k in lower for k in legal_keywords):
+        # If the question is clearly about cyber topics but the answer lacks signals,
+        # provide a prevention-only safe fallback.
+        if _is_cyber_question(user_question):
+            guidance = _get_cyber_prevention_guidance(language)
+            return _add_source_attribution(guidance, language)
         if language.startswith('hi'):
             return 'मैं केवल कानूनी जानकारी प्रदान कर सकता/सकती हूँ। कृपया एक कानूनी प्रश्न पूछें।'
         return 'My function is to provide information on legal topics. Please frame your question accordingly.'
@@ -146,6 +159,47 @@ def _add_source_attribution(text: str, language: str = 'en') -> str:
 - Laws are complex and may vary by case and jurisdiction"""
     
     return text + disclaimer
+
+
+def _is_cyber_question(text: Optional[str]) -> bool:
+    t = (text or '').strip().lower()
+    if not t:
+        return False
+    cyber_keywords = [
+        'cyber', 'cyber crime', 'cybercrime', 'online fraud', 'phishing', 'scam', 'otp', 'upi', 'bank fraud',
+        'data privacy', 'privacy', 'social media', 'identity theft', 'sextortion', 'harassment', 'stalking',
+        'ransomware', 'malware', 'hacking', 'password', '2fa', 'mfa', 'vpn', 'it act', 'information technology act'
+    ]
+    return any(k in t for k in cyber_keywords)
+
+
+def _get_cyber_prevention_guidance(language: str = 'en') -> str:
+    if language.startswith('hi'):
+        return (
+            "साइबर अपराध से बचाव के लिए व्यावहारिक कदम:\n"
+            "- मजबूत और अलग-अलग पासवर्ड रखें; पासवर्ड मैनेजर का उपयोग करें\n"
+            "- हर जगह 2‑FA/MFA सक्षम करें (ऑथेंटिकेटर ऐप/सिक्योरिटी की)\n"
+            "- सिस्टम, ब्राउज़र, ऐप्स और राउटर फर्मवेयर को अपडेट रखें\n"
+            "- संदिग्ध लिंक/QR/अटैचमेंट न खोलें; यूआरएल खुद टाइप करें\n"
+            "- सार्वजनिक Wi‑Fi पर संवेदनशील काम न करें; जरूरत हो तो हॉटस्पॉट/VPN इस्तेमाल करें\n"
+            "- बैंक/UPI अलर्ट चालू रखें; अनजान कॉल/SMS/OTP न साझा करें\n"
+            "- सोशल मीडिया गोपनीयता सेटिंग्स सख्त रखें; अति-साझेदारी से बचें\n"
+            "- 3‑2‑1 बैकअप रखें और रिस्टोर टेस्ट करें\n"
+            "यदि धोखा हो जाए: नेटवर्क से डिस्कनेक्ट करें, स्कैन चलाएँ, पासवर्ड बदलें, बैंक को तुरंत सूचित करें, और 1930/\n"
+            "cybercrime.gov.in पर रिपोर्ट करें।"
+        )
+    return (
+        "Practical steps to prevent cybercrime:\n"
+        "- Use strong, unique passwords and a reputable password manager\n"
+        "- Enable 2FA/MFA everywhere (authenticator app or security key)\n"
+        "- Keep OS, browser, apps, router/IoT firmware up to date\n"
+        "- Be phishing-smart: avoid unsolicited links/QRs/attachments; type important URLs yourself\n"
+        "- Prefer mobile hotspot or trusted VPN over public Wi‑Fi for sensitive actions\n"
+        "- Turn on bank/UPI/card transaction alerts; never share OTP/PIN\n"
+        "- Tighten social media privacy; limit personal data exposure\n"
+        "- Maintain 3‑2‑1 backups and test restores\n"
+        "If victimized: disconnect, run a full scan, change passwords, contact your bank, and report at cybercrime.gov.in (India) or your national cybercrime portal."
+    )
 
 
 def test_apply_policy_allows_definitions():
