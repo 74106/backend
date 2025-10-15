@@ -125,7 +125,7 @@ def root():
         "background:#ffe969}"
         "</style></head><body><div class='box'>"
         "<h1>NyaySetu</h1>"
-        "<p><b>Bridging people to justice.</b> NyaySetu helps citizens ask legal questions, generate forms (FIR, RTI, complaints, appeals), and connect with lawyers for guidance.</p>"
+        "<p><b>Cyber Law Focus.</b> NyaySetu specializes in cyber law: online fraud, cybercrime complaints, data privacy, social media harassment, and electronic evidence. Ask questions, generate relevant forms, and connect with cyber-law lawyers.</p>"
         "<div class='big-nav'>"
         "<a class='big-tile' href='#lawyer' aria-label='Book a Lawyer (call or chat)'>🧑‍⚖️ Book a Lawyer</a>"
         "<a class='big-tile' href='#forms' aria-label='Make a Form (simple)'>📝 Make a Form</a>"
@@ -134,19 +134,19 @@ def root():
         "<div class='grid'>"
         "  <div>"
         "    <div id='lawyer' class='card'>"
-        "      <h2>Book a Lawyer</h2>"
-        "      <p>Choose how you want to connect. We will add phone numbers shortly.</p>"
+        "      <h2>Book a Cyber-Lawyer</h2>"
+        "      <p>See live availability of cyber-law specialists. Phone numbers will be added soon.</p>"
         "      <a class='button' id='btnCall' href='javascript:void(0)'>📞 Call a Lawyer</a>"
         "      <a class='button secondary' id='btnChat' href='javascript:void(0)'>💬 Chat to a Lawyer</a>"
         "      <p id='lawyerNote' style='margin-top:8px;color:#444'>Numbers coming soon. For now, chat opens a placeholder.</p>"
         "    </div>"
         "    <div id='forms' class='card'>"
-        "      <h2>Form Generator</h2>"
-        "      <p>Get simple, guided forms with examples for every field.</p>"
+        "      <h2>Cyber Law Form Generator</h2>"
+        "      <p>Get guided templates for cyber-complaints, online fraud, and data protection.</p>"
         "      <div class='endpoint'><b>POST</b> <code>/generate_form</code> (Bearer token required)</div>"
         "    </div>"
         "    <div id='chat' class='card'>"
-        "      <h2>Ask a Legal Question</h2>"
+        "      <h2>Ask a Cyber Law Question</h2>"
         "      <div class='endpoint'><b>POST</b> <code>/chat</code> (Bearer token required)</div>"
         "    </div>"
         "    <div id='pdf' class='card'>"
@@ -161,7 +161,7 @@ def root():
         "  </div>"
         "  <div>"
         "    <div class='card'>"
-        "      <h3>API Endpoints</h3>"
+        "      <h3>API Endpoints (Cyber Law)</h3>"
         "      <p>Status: healthy. See <code>/health</code>.</p>"
         "      <h4>Auth</h4>"
         "      <div class='endpoint'><b>POST</b> <code>/auth/register</code> { email, password }</div>"
@@ -171,17 +171,38 @@ def root():
         "      <div class='endpoint'><b>POST</b> <code>/generate_form</code></div>"
         "      <div class='endpoint'><b>GET</b> <code>/data/chats</code> ?start&end&language&q</div>"
         "      <div class='endpoint'><b>GET</b> <code>/data/forms</code> ?start&end&form_type&q</div>"
+        "      <div class='endpoint'><b>GET</b> <code>/lawyers/availability</code> (Bearer token required)</div>"
         "    </div>"
         "  </div>"
         "</div>"
         "<script>"
         "document.getElementById('btnCall').addEventListener('click', function(){alert('Phone numbers will be added by admin soon.');});"
         "document.getElementById('btnChat').addEventListener('click', function(){alert('Chat with a lawyer coming soon.');});"
+        "async function loadAvailability(){try{const res=await fetch('/lawyers/availability',{headers:{'Authorization':localStorage.getItem('nyaysetu_token')?('Bearer '+localStorage.getItem('nyaysetu_token')):''}});if(!res.ok){return;}const data=await res.json();const el=document.getElementById('lawyerNote');if(el){const lines=(data.lawyers||[]).map(l=>`${l.name} — ${l.specialty} — ${l.available?'Available':'Busy'}`);el.textContent = lines.join('\n') || el.textContent;}}catch(e){}}; loadAvailability();"
         "document.getElementById('pdfForm').addEventListener('submit', async function(e){e.preventDefault(); const form=new FormData(this); const res=await fetch('/tools/summarize_pdf',{method:'POST', body:form}); const txt=await res.text(); document.getElementById('pdfOut').textContent=txt;});"
         "</script>"
         "</div></body></html>"
     )
     return make_response(html, 200)
+
+@app.route('/lawyers/availability', methods=['GET'])
+def lawyers_availability():
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': 'Unauthorized'}), 401
+
+        # Placeholder static dataset; replace with DB records in future
+        lawyers = [
+            { 'id': 1, 'name': 'Adv. Meera Sharma', 'specialty': 'Cyber Crime, IT Act', 'available': True },
+            { 'id': 2, 'name': 'Adv. Raj Patel', 'specialty': 'Data Privacy, Online Fraud', 'available': False },
+            { 'id': 3, 'name': 'Adv. Ananya Rao', 'specialty': 'Social Media Harassment', 'available': True }
+        ]
+
+        return jsonify({ 'lawyers': lawyers, 'timestamp': get_current_timestamp() })
+    except Exception as e:
+        logger.error(f"Error in lawyers_availability: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/tools/summarize_pdf', methods=['POST'])
 def summarize_pdf():
