@@ -281,7 +281,7 @@ def speech_chat():
             transcript = None
 
         if not transcript:
-            return jsonify({'error': 'Transcription failed on server'}), 500
+            return jsonify({'error': 'Speech-to-text not available on this deployment'}, 501)
 
         # Reuse /chat logic: detect language, translate, answer, translate back
         detected_lang = lang_hint or detect_language(transcript)
