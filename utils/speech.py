@@ -19,19 +19,17 @@ def transcribe_audio_bytes(audio_bytes: bytes, language: Optional[str] = None) -
 	try:
 		from faster_whisper import WhisperModel  # type: ignore
 		import io
-		# Use small model by default for speed on CPU
 		model_name = 'small'
 		compute_type = 'int8'
 		model = WhisperModel(model_name, device='cpu', compute_type=compute_type)
-		# Stream bytes to temporary buffer
 		buf = io.BytesIO(audio_bytes)
-		# Language hint optional
 		segments, info = model.transcribe(buf, language=language, beam_size=1)
 		texts = []
 		for seg in segments:
 			texts.append(seg.text)
 		return " ".join(t.strip() for t in texts if t and t.strip()) or None
 	except Exception:
+		# STT not available or failed
 		return None
 
 
