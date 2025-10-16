@@ -94,8 +94,8 @@ def apply_policy(original_answer: Optional[str], user_question: str, language: s
             # Add source attribution block for consistency
             return _add_source_attribution(guidance, language)
         if language.startswith('hi'):
-            return 'मैं मुख्यतः साइबर कानून से संबंधित जानकारी प्रदान करता/करती हूँ। कृपया साइबर कानून पर प्रश्न पूछें।'
-        return 'I primarily provide information on cyber law. Please ask a cyber law-related question.'
+            return 'मैं मुख्यतः कानूनी विषयों (जिसमें साइबर कानून शामिल है) पर जानकारी प्रदान करता/करती हूँ। कृपया कानूनी प्रश्न पूछें।'
+        return 'I primarily provide information on legal topics (including cyber law). Please ask a legal question.'
 
     # Replace or suppress identity mentions
     identity_patterns = [
@@ -107,20 +107,7 @@ def apply_policy(original_answer: Optional[str], user_question: str, language: s
             return 'मैं कानूनी जानकारी में विशेषज्ञता वाला एक एआई सहायक हूं।'
         return 'I am a legal chat bot'
 
-    # Ensure answer contains legal/cyber-related content
-    legal_keywords = [
-        # English keywords
-        'law', 'legal', 'cyber', 'cybercrime', 'it act', 'information technology act', 'data privacy', 'online fraud', 'phishing', 'social media', 'electronic evidence', 'court', 'police', 'rights', 'complaint', 'fir', 'appeal', 'contract', 'bns', 'bnss', 'bsa',
-    ]
-    if not any(k in lower for k in legal_keywords):
-        # If the question is clearly about cyber topics but the answer lacks signals,
-        # provide a prevention-only safe fallback.
-        if _is_cyber_question(user_question):
-            guidance = _get_cyber_prevention_guidance(language)
-            return _add_source_attribution(guidance, language)
-        if language.startswith('hi'):
-            return 'मैं केवल कानूनी जानकारी प्रदान कर सकता/सकती हूँ। कृपया एक कानूनी प्रश्न पूछें।'
-        return 'My function is to provide information on legal topics. Please frame your question accordingly.'
+    # Remove keyword gating: allow full legal/cyber-law answers and focus on adding disclaimer/sources
 
     # Enforce source attribution for legal answers
     if not _has_source_attribution(ans):
