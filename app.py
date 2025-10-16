@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify, make_response, redirect
 from flask_cors import CORS
 from models.legal_chat_model import get_legal_advice
+from utils.lang import detect_language, translate, translate_pair
 from policy import is_identity_question, is_legal_question, apply_policy
 from utils.form_generator import generate_form
 from utils.db import (
@@ -249,6 +250,77 @@ def summarize_pdf():
         logger.error(f"Error in summarize_pdf: {e}")
         return make_response('Internal server error', 500)
 
+
+@app.route('/speech_chat', methods=['POST'])
+def speech_chat():
+    """Accepts multipart/form-data with 'audio' file and optional 'language'.
+
+    Transcribes audio, detects language if not supplied, runs chat flow,
+    and returns localized answer.
+    """
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': 'Unauthorized'}), 401
+
+        if 'audio' not in request.files:
+            return jsonify({'error': 'No audio uploaded'}), 400
+        file = request.files['audio']
+        audio_bytes = file.read()
+        if not audio_bytes:
+            return jsonify({'error': 'Empty audio file'}), 400
+
+        # Optional language hint
+        lang_hint = request.form.get('language') or None
+
+        try:
+            from utils.speech import transcribe_audio_bytes  # lazy import
+            transcript = transcribe_audio_bytes(audio_bytes, language=lang_hint)
+        except Exception as e:
+            logger.error(f"STT import/exec failed: {e}")
+            transcript = None
+
+        if not transcript:
+            return jsonify({'error': 'Transcription failed on server'}), 500
+
+        # Reuse /chat logic: detect language, translate, answer, translate back
+        detected_lang = lang_hint or detect_language(transcript)
+        _, transcript_en = translate_pair(transcript, detected_lang)
+
+        answer = None
+        try:
+            answer = get_legal_advice(transcript_en, 'en')
+        except Exception as local_err:
+            logger.warning(f"Local legal model failed (speech): {local_err}")
+
+        if not answer:
+            answer = "I apologize, but I'm currently unable to provide detailed legal advice. Please consult a qualified lawyer for your specific situation."
+
+        try:
+            sanitized_en = apply_policy(answer, transcript_en, 'en')
+        except Exception as pol_err:
+            logger.error(f"Policy enforcement failed (speech): {pol_err}")
+            sanitized_en = 'I can only provide legal knowledge. Please ask a legal question.'
+
+        final_text = translate(sanitized_en, 'en', detected_lang or 'en')
+
+        timestamp = get_current_timestamp()
+        try:
+            insert_chat(question=transcript, answer=final_text, language=detected_lang, timestamp=timestamp)
+        except Exception as db_err:
+            logger.error(f"Failed to persist speech chat: {db_err}")
+
+        return jsonify({
+            'answer': final_text,
+            'question': transcript,
+            'language': detected_lang,
+            'timestamp': timestamp,
+            'source': 'local_model'
+        })
+    except Exception as e:
+        logger.error(f"Error in speech_chat endpoint: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
 @app.route('/health', methods=['GET'])
 def health_check():
     return jsonify({'status': 'healthy', 'service': 'NyaySetu Legal Aid API'})
@@ -258,8 +330,9 @@ def chat():
     try:
         data = request.get_json() or {}
         question = (data.get('question') or '').strip()
-        # Enforce English-only for now
-        language = 'en'
+        # Auto-detect input language; translate to English for internal processing
+        language = data.get('language') or detect_language(question)
+        detected_lang, question_en = translate_pair(question, language)
         if not question:
             return jsonify({'error': 'Question is required'}), 400
 
@@ -270,7 +343,7 @@ def chat():
         answer = None
         # Try local legal model first
         try:
-            answer = get_legal_advice(question, language)
+            answer = get_legal_advice(question_en, 'en')
             logger.info("Got answer from local legal model")
         except Exception as local_err:
             logger.warning(f"Local legal model failed: {local_err}")
@@ -281,23 +354,26 @@ def chat():
         if not answer:
             answer = "I apologize, but I'm currently unable to provide detailed legal advice. Please consult a qualified lawyer for your specific situation."
 
-        # Enforce policy/sanitization
+        # Enforce policy/sanitization on English answer first
         try:
-            sanitized = apply_policy(answer, question, language)
+            sanitized_en = apply_policy(answer, question_en, 'en')
         except Exception as pol_err:
             logger.error(f"Policy enforcement failed: {pol_err}")
-            sanitized = 'I can only provide legal knowledge. Please ask a legal question.'
+            sanitized_en = 'I can only provide legal knowledge. Please ask a legal question.'
+
+        # Translate back to user's language if needed
+        sanitized = translate(sanitized_en, 'en', detected_lang or 'en')
 
         timestamp = get_current_timestamp()
         try:
-            insert_chat(question=question, answer=sanitized, language=language, timestamp=timestamp)
+            insert_chat(question=question, answer=sanitized, language=detected_lang, timestamp=timestamp)
         except Exception as db_err:
             logger.error(f"Failed to persist chat: {db_err}")
 
         return jsonify({
             'answer': sanitized,
             'question': question,
-            'language': language,
+            'language': detected_lang,
             'timestamp': timestamp,
             'source': 'cohere_api' if answer and 'cohere' in str(answer).lower() else 'local_model'
         })
