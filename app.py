@@ -290,7 +290,7 @@ def lawyers_availability():
 
         # Placeholder static dataset; replace with DB records in future
         lawyers = [
-            { 'id': 1, 'name': 'Any available Lawyer', 'specialty': 'Cyber Law Specialist', 'available': True }
+            { 'id': 1, 'name': 'Any available Lawyer', 'specialty': 'Cyber Law Specialist' }
         ]
 
         return jsonify({ 'lawyers': lawyers, 'timestamp': get_current_timestamp() })
