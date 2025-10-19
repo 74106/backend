@@ -50,6 +50,101 @@ app = Flask(__name__)
 CORS(app)
 init_db()
 
+# Legal document detection and summarization helpers
+def detect_legal_document(text: str) -> bool:
+    """Detect if the PDF contains legal content based on keywords and patterns."""
+    text_lower = text.lower()
+    
+    # Legal keywords and phrases
+    legal_indicators = [
+        'court', 'judge', 'law', 'legal', 'statute', 'act', 'section', 'clause',
+        'plaintiff', 'defendant', 'petitioner', 'respondent', 'witness', 'evidence',
+        'criminal', 'civil', 'appeal', 'judgment', 'order', 'decree', 'verdict',
+        'constitution', 'amendment', 'regulation', 'provision', 'penalty', 'fine',
+        'imprisonment', 'bail', 'warrant', 'summons', 'notice', 'complaint',
+        'fir', 'charge sheet', 'indictment', 'prosecution', 'defense', 'counsel',
+        'advocate', 'attorney', 'barrister', 'solicitor', 'legal opinion',
+        'contract', 'agreement', 'terms', 'conditions', 'liability', 'obligation',
+        'right', 'duty', 'responsibility', 'breach', 'violation', 'infringement',
+        'copyright', 'patent', 'trademark', 'intellectual property', 'privacy',
+        'data protection', 'cyber crime', 'it act', 'information technology',
+        'digital signature', 'electronic record', 'computer evidence'
+    ]
+    
+    # Count legal indicators
+    legal_count = sum(1 for indicator in legal_indicators if indicator in text_lower)
+    
+    # Check for legal document patterns
+    legal_patterns = [
+        r'\b(?:section|clause|article)\s+\d+',
+        r'\b(?:act|act\s+of)\s+\d{4}',
+        r'\b(?:vs?\.?|versus)\b',
+        r'\b(?:in\s+re|in\s+the\s+matter\s+of)\b',
+        r'\b(?:case\s+no\.?|file\s+no\.?)\b',
+        r'\b(?:court\s+of|high\s+court|supreme\s+court)\b',
+        r'\b(?:bail|warrant|summons|notice)\b',
+        r'\b(?:fir|first\s+information\s+report)\b'
+    ]
+    
+    import re
+    pattern_count = sum(1 for pattern in legal_patterns if re.search(pattern, text_lower))
+    
+    # Consider it legal if we find enough indicators
+    return legal_count >= 5 or pattern_count >= 3
+
+def generate_legal_summary(text: str, is_legal: bool) -> str:
+    """Generate AI-powered summary for legal documents."""
+    try:
+        # Use the existing legal model for summarization
+        if is_legal:
+            prompt = f"""Please provide a comprehensive summary of this legal document. Focus on:
+1. Key legal issues and facts
+2. Important dates, parties, and case details
+3. Legal provisions, sections, or acts mentioned
+4. Main arguments or claims
+5. Court orders, judgments, or decisions
+6. Any deadlines or important legal requirements
+
+Document text:
+{text[:4000]}  # Limit to avoid token limits
+
+Please provide a clear, structured summary suitable for legal professionals."""
+        else:
+            prompt = f"""Please provide a summary of this document. Since it may not be a legal document, focus on:
+1. Main topics and key points
+2. Important information and facts
+3. Any legal or regulatory content if present
+4. Key dates and parties mentioned
+5. Main conclusions or recommendations
+
+Document text:
+{text[:4000]}
+
+Please provide a clear, structured summary."""
+
+        # Use the existing legal advice function for summarization
+        summary = get_legal_advice(prompt, 'en')
+        return summary if summary else generate_basic_summary(text)
+        
+    except Exception as e:
+        logger.error(f"Legal summarization failed: {e}")
+        return generate_basic_summary(text)
+
+def generate_basic_summary(text: str) -> str:
+    """Generate a basic summary as fallback."""
+    # Split into sentences and take first few meaningful ones
+    sentences = text.split('.')
+    meaningful_sentences = [s.strip() for s in sentences if len(s.strip()) > 20]
+    
+    # Take first 3-5 sentences as summary
+    summary_sentences = meaningful_sentences[:5]
+    summary = '. '.join(summary_sentences)
+    
+    if summary and not summary.endswith('.'):
+        summary += '.'
+    
+    return summary or text[:500] + "..." if len(text) > 500 else text
+
 def generate_token(length: int = 32) -> str:
     return secrets.token_urlsafe(length)
 
@@ -207,8 +302,8 @@ def lawyers_availability():
 
 @app.route('/tools/summarize_pdf', methods=['POST'])
 def summarize_pdf():
-    """Very simple PDF summariser: extracts text and returns the first N lines.
-    Intended as a placeholder for lawyers; replace with an LLM-based summary later.
+    """AI-powered PDF summariser focused on legal documents.
+    Extracts text, detects legal content, and provides intelligent summarization.
     """
     try:
         user = get_current_user()
@@ -216,20 +311,20 @@ def summarize_pdf():
             return jsonify({'error': 'Unauthorized'}), 401
 
         if 'file' not in request.files:
-            return make_response('No file uploaded', 400)
+            return jsonify({'error': 'No file uploaded'}), 400
         file = request.files['file']
         if not file or file.filename.lower().endswith('.pdf') is False:
-            return make_response('Please upload a PDF file', 400)
+            return jsonify({'error': 'Please upload a PDF file'}), 400
 
         # Lazy import to avoid hard dependency during cold start
         try:
             import PyPDF2  # type: ignore
         except Exception:
-            return make_response('PDF support not installed on server', 500)
+            return jsonify({'error': 'PDF support not installed on server'}), 500
 
         reader = PyPDF2.PdfReader(file)
         extracted: list[str] = []
-        max_pages = min(len(reader.pages), 10)  # safety cap
+        max_pages = min(len(reader.pages), 20)  # Increased limit for legal documents
         for i in range(max_pages):
             try:
                 page = reader.pages[i]
@@ -241,15 +336,114 @@ def summarize_pdf():
 
         full_text = "\n".join(extracted).strip()
         if not full_text:
-            return make_response('Could not extract text from PDF', 200)
+            return jsonify({'error': 'Could not extract text from PDF'}), 400
 
-        # Naive summary: first 1200 characters
-        preview = full_text[:1200]
-        return make_response(preview, 200)
+        # Detect if this is a legal document
+        is_legal_doc = detect_legal_document(full_text)
+        
+        # Generate AI-powered summary
+        try:
+            summary = generate_legal_summary(full_text, is_legal_doc)
+        except Exception as e:
+            logger.warning(f"AI summarization failed: {e}")
+            # Fallback to basic summary
+            summary = generate_basic_summary(full_text)
+
+        return jsonify({
+            'summary': summary,
+            'is_legal_document': is_legal_doc,
+            'original_length': len(full_text),
+            'summary_length': len(summary),
+            'pages_processed': len(extracted)
+        }), 200
     except Exception as e:
         logger.error(f"Error in summarize_pdf: {e}")
-        return make_response('Internal server error', 500)
+        return jsonify({'error': 'Internal server error'}), 500
 
+@app.route('/tools/convert_to_pdf', methods=['POST'])
+def convert_to_pdf():
+    """Convert summarized text to PDF format."""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': 'Unauthorized'}), 401
+
+        data = request.get_json() or {}
+        text = data.get('text', '').strip()
+        title = data.get('title', 'Legal Document Summary')
+        
+        if not text:
+            return jsonify({'error': 'Text content is required'}), 400
+
+        # Lazy import to avoid hard dependency during cold start
+        try:
+            from reportlab.lib.pagesizes import letter, A4
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.units import inch
+            from reportlab.lib import colors
+            from io import BytesIO
+        except Exception:
+            return jsonify({'error': 'PDF generation support not installed on server'}), 500
+
+        # Create PDF in memory
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, 
+                              topMargin=72, bottomMargin=18)
+        
+        # Get styles
+        styles = getSampleStyleSheet()
+        
+        # Create custom styles
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=16,
+            spaceAfter=30,
+            alignment=1,  # Center alignment
+            textColor=colors.darkblue
+        )
+        
+        body_style = ParagraphStyle(
+            'CustomBody',
+            parent=styles['Normal'],
+            fontSize=11,
+            spaceAfter=12,
+            leading=14
+        )
+        
+        # Build PDF content
+        story = []
+        
+        # Add title
+        story.append(Paragraph(title, title_style))
+        story.append(Spacer(1, 20))
+        
+        # Add content
+        paragraphs = text.split('\n\n')
+        for para in paragraphs:
+            if para.strip():
+                story.append(Paragraph(para.strip(), body_style))
+                story.append(Spacer(1, 6))
+        
+        # Build PDF
+        doc.build(story)
+        
+        # Get PDF data
+        buffer.seek(0)
+        pdf_data = buffer.getvalue()
+        buffer.close()
+        
+        # Return PDF as response
+        response = make_response(pdf_data)
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = f'attachment; filename="{title.replace(" ", "_")}_Summary.pdf"'
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error in convert_to_pdf: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/speech_chat', methods=['POST'])
 def speech_chat():
