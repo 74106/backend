@@ -290,7 +290,7 @@ def lawyers_availability():
 
         # Placeholder static dataset; replace with DB records in future
         lawyers = [
-            { 'id': 1, 'name': 'Any available Lawyer', 'specialty': 'Cyber Law Specialist' }
+            { 'id': 1, 'name': 'Any available Lawyer', 'specialty': 'Cyber Law Specialist', 'available': True }
         ]
 
         return jsonify({ 'lawyers': lawyers, 'timestamp': get_current_timestamp() })
@@ -298,145 +298,7 @@ def lawyers_availability():
         logger.error(f"Error in lawyers_availability: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
-@app.route('/lawyers/plans', methods=['GET'])
-def get_lawyer_plans():
-    """Get available lawyer subscription plans."""
-    try:
-        user = get_current_user()
-        if not user:
-            return jsonify({'error': 'Unauthorized'}), 401
 
-        plans = [
-            {
-                'id': 'basic',
-                'name': 'Basic Consultation',
-                'price': 79,
-                'currency': 'INR',
-                'duration_hours': 1,
-                'features': [
-                    '1 hour consultation with qualified lawyer',
-                    'General legal advice',
-                    'Basic case assessment',
-                    'Email follow-up support'
-                ],
-                'popular': False,
-                'color': '#6c757d'
-            },
-            {
-                'id': 'standard',
-                'name': 'Standard Consultation',
-                'price': 99,
-                'currency': 'INR',
-                'duration_hours': 2,
-                'features': [
-                    '2 hours consultation with experienced lawyer',
-                    'Detailed legal analysis',
-                    'Case strategy discussion',
-                    'Document review (up to 5 pages)',
-                    'Email and phone support'
-                ],
-                'popular': True,
-                'color': '#007bff'
-            },
-            {
-                'id': 'premium',
-                'name': 'Premium Consultation',
-                'price': 299,
-                'currency': 'INR',
-                'duration_hours': 5,
-                'features': [
-                    '5 hours consultation with senior lawyer',
-                    'Comprehensive legal analysis',
-                    'Detailed case strategy',
-                    'Document review (unlimited)',
-                    'Drafting of basic legal notices',
-                    'Priority support',
-                    'Follow-up consultation included'
-                ],
-                'popular': False,
-                'color': '#28a745'
-            },
-            {
-                'id': 'elite',
-                'name': 'Elite Legal Service',
-                'price': 999,
-                'currency': 'INR',
-                'duration_hours': 'Unlimited',
-                'features': [
-                    'Premium lawyer consultation',
-                    'Unlimited consultation hours',
-                    'Complete legal document drafting',
-                    'Form generation and filing assistance',
-                    'Court representation preparation',
-                    'Priority booking and support',
-                    'Dedicated legal advisor',
-                    'Monthly case review'
-                ],
-                'popular': False,
-                'color': '#dc3545'
-            }
-        ]
-
-        return jsonify({ 'plans': plans, 'timestamp': get_current_timestamp() })
-    except Exception as e:
-        logger.error(f"Error in get_lawyer_plans: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-@app.route('/lawyers/book', methods=['POST'])
-def book_lawyer():
-    """Book a lawyer consultation with selected plan."""
-    try:
-        user = get_current_user()
-        if not user:
-            return jsonify({'error': 'Unauthorized'}), 401
-
-        data = request.get_json() or {}
-        plan_id = data.get('plan_id')
-        lawyer_id = data.get('lawyer_id')
-        case_description = data.get('case_description', '')
-        preferred_time = data.get('preferred_time', '')
-        
-        if not plan_id:
-            return jsonify({'error': 'Plan selection is required'}), 400
-
-        # Validate plan
-        valid_plans = ['basic', 'standard', 'premium', 'elite']
-        if plan_id not in valid_plans:
-            return jsonify({'error': 'Invalid plan selected'}), 400
-
-        # For now, return a booking confirmation
-        # In a real implementation, this would integrate with payment gateway
-        booking_id = f"BOOK_{secrets.token_hex(8).upper()}"
-        
-        booking_details = {
-            'booking_id': booking_id,
-            'plan_id': plan_id,
-            'lawyer_id': lawyer_id,
-            'user_id': user['user_id'],
-            'case_description': case_description,
-            'preferred_time': preferred_time,
-            'status': 'pending_payment',
-            'created_at': get_current_timestamp()
-        }
-
-        # TODO: Integrate with payment gateway (Razorpay, Stripe, etc.)
-        # TODO: Store booking in database
-        # TODO: Send confirmation email/SMS
-
-        return jsonify({
-            'message': 'Booking request created successfully',
-            'booking_id': booking_id,
-            'status': 'pending_payment',
-            'next_steps': [
-                'Complete payment to confirm your booking',
-                'You will receive a confirmation email with meeting details',
-                'Your lawyer will contact you within 24 hours'
-            ]
-        }), 200
-
-    except Exception as e:
-        logger.error(f"Error in book_lawyer: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/tools/summarize_pdf', methods=['POST'])
 def summarize_pdf():
