@@ -313,13 +313,13 @@ def get_subscription_tiers():
                     '1 hour consultation',
                     'Basic legal advice',
                     'Phone/Video call',
-                    'Follow-up support'
+                    'Case assessment'
                 ],
                 'description': 'Perfect for simple legal queries and initial consultations.'
             },
             {
-                'id': 'extended',
-                'name': 'Extended Consultation',
+                'id': 'standard',
+                'name': 'Standard Consultation',
                 'price': 99,
                 'currency': 'INR',
                 'duration': '2 hours',
@@ -327,38 +327,38 @@ def get_subscription_tiers():
                     '2 hours consultation',
                     'Detailed legal analysis',
                     'Document review',
-                    'Priority support'
+                    'Follow-up support'
                 ],
-                'description': 'Ideal for complex cases requiring detailed analysis.'
+                'description': 'Ideal for cases requiring deeper analysis and review.'
             },
             {
-                'id': 'comprehensive',
-                'name': 'Comprehensive Support',
+                'id': 'extended',
+                'name': 'Extended Consultation',
                 'price': 299,
                 'currency': 'INR',
                 'duration': '5 hours',
                 'features': [
                     '5 hours consultation',
-                    'Complete case analysis',
-                    'Legal strategy planning',
-                    'Multiple sessions'
+                    'Comprehensive legal strategy',
+                    'Document drafting',
+                    'Priority support'
                 ],
-                'description': 'Comprehensive legal support for serious legal matters.'
+                'description': 'Comprehensive support for complex matters across multiple sessions.'
             },
             {
                 'id': 'premium',
                 'name': 'Premium Service',
                 'price': 999,
                 'currency': 'INR',
-                'duration': 'Premium lawyer + drafting',
+                'duration': 'Premium lawyer + premium drafting',
                 'features': [
-                    'Premium lawyer access',
-                    'Legal document drafting',
+                    'Premium lawyer assignment',
+                    'Premium document drafting',
                     'Court representation',
                     '24/7 priority support',
                     'Case management'
                 ],
-                'description': 'Full-service legal support with premium lawyers and document drafting.',
+                'description': 'Full-service premium support including drafting and representation.',
                 'featured': True
             }
         ]
@@ -390,7 +390,7 @@ def book_lawyer():
             return jsonify({'error': 'Subscription tier is required'}), 400
             
         # Validate tier
-        valid_tiers = ['basic', 'extended', 'comprehensive', 'premium']
+        valid_tiers = ['basic', 'standard', 'extended', 'premium']
         if tier_id not in valid_tiers:
             return jsonify({'error': 'Invalid subscription tier'}), 400
             
@@ -428,6 +428,66 @@ def book_lawyer():
         
     except Exception as e:
         logger.error(f"Error in book_lawyer: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@app.route('/lawyers/book', methods=['POST'])
+def lawyers_book():
+    """Compatibility endpoint for frontend: accepts { tier, price, tier_name } and books consultation."""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': 'Unauthorized'}), 401
+
+        data = request.get_json() or {}
+        tier = (data.get('tier') or '').strip()
+        price = data.get('price')
+        tier_name = (data.get('tier_name') or '').strip()
+
+        # Map to canonical tier_id
+        tier_map = {
+            'basic': 'basic',
+            'standard': 'standard',
+            'extended': 'extended',
+            'premium': 'premium'
+        }
+        tier_id = tier_map.get(tier)
+        if not tier_id:
+            return jsonify({'error': 'Invalid subscription tier'}), 400
+
+        # Basic server-side price sanity check (non-authoritative; payment gateway should verify)
+        expected_prices = {
+            'basic': 79,
+            'standard': 99,
+            'extended': 299,
+            'premium': 999
+        }
+        if isinstance(price, int) and expected_prices.get(tier_id) != price:
+            # Do not block, but inform client that server price differs
+            logger.info(f"Client price {price} differs from server price {expected_prices.get(tier_id)} for tier {tier_id}")
+
+        booking_id = f"BOOK_{int(time.time())}"
+
+        booking_data = {
+            'booking_id': booking_id,
+            'tier_id': tier_id,
+            'tier_name_submitted': tier_name,
+            'user_id': user['user_id'],
+            'status': 'pending',
+            'created_at': get_current_timestamp()
+        }
+
+        # TODO: persist booking_data in DB, notify lawyers, trigger payment flow
+
+        return jsonify({
+            'message': 'Lawyer consultation booked successfully',
+            'booking_id': booking_id,
+            'status': 'pending',
+            'tier_id': tier_id,
+            'server_price': expected_prices.get(tier_id)
+        }), 200
+    except Exception as e:
+        logger.error(f"Error in lawyers_book: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
 
