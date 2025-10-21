@@ -290,13 +290,146 @@ def lawyers_availability():
 
         # Placeholder static dataset; replace with DB records in future
         lawyers = [
-            { 'id': 1, 'name': 'Any available Lawyer', 'specialty': 'Cyber Law Specialist', 'available': True }
+            { 'id': 1, 'name': 'Any available Lawyer', 'specialty': 'Cyber Law Specialist' }
         ]
 
         return jsonify({ 'lawyers': lawyers, 'timestamp': get_current_timestamp() })
     except Exception as e:
         logger.error(f"Error in lawyers_availability: {e}")
         return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/subscription-tiers', methods=['GET'])
+def get_subscription_tiers():
+    """Get available subscription tiers for lawyer consultation."""
+    try:
+        tiers = [
+            {
+                'id': 'basic',
+                'name': 'Basic Consultation',
+                'price': 79,
+                'currency': 'INR',
+                'duration': '1 hour',
+                'features': [
+                    '1 hour consultation',
+                    'Basic legal advice',
+                    'Phone/Video call',
+                    'Follow-up support'
+                ],
+                'description': 'Perfect for simple legal queries and initial consultations.'
+            },
+            {
+                'id': 'extended',
+                'name': 'Extended Consultation',
+                'price': 99,
+                'currency': 'INR',
+                'duration': '2 hours',
+                'features': [
+                    '2 hours consultation',
+                    'Detailed legal analysis',
+                    'Document review',
+                    'Priority support'
+                ],
+                'description': 'Ideal for complex cases requiring detailed analysis.'
+            },
+            {
+                'id': 'comprehensive',
+                'name': 'Comprehensive Support',
+                'price': 299,
+                'currency': 'INR',
+                'duration': '5 hours',
+                'features': [
+                    '5 hours consultation',
+                    'Complete case analysis',
+                    'Legal strategy planning',
+                    'Multiple sessions'
+                ],
+                'description': 'Comprehensive legal support for serious legal matters.'
+            },
+            {
+                'id': 'premium',
+                'name': 'Premium Service',
+                'price': 999,
+                'currency': 'INR',
+                'duration': 'Premium lawyer + drafting',
+                'features': [
+                    'Premium lawyer access',
+                    'Legal document drafting',
+                    'Court representation',
+                    '24/7 priority support',
+                    'Case management'
+                ],
+                'description': 'Full-service legal support with premium lawyers and document drafting.',
+                'featured': True
+            }
+        ]
+        
+        return jsonify({
+            'tiers': tiers,
+            'timestamp': get_current_timestamp()
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error in get_subscription_tiers: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/book-lawyer', methods=['POST'])
+def book_lawyer():
+    """Book a lawyer consultation with selected subscription tier."""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': 'Unauthorized'}), 401
+            
+        data = request.get_json() or {}
+        tier_id = data.get('tier_id')
+        customer_name = data.get('customer_name', '')
+        customer_phone = data.get('customer_phone', '')
+        issue_description = data.get('issue_description', '')
+        
+        if not tier_id:
+            return jsonify({'error': 'Subscription tier is required'}), 400
+            
+        # Validate tier
+        valid_tiers = ['basic', 'extended', 'comprehensive', 'premium']
+        if tier_id not in valid_tiers:
+            return jsonify({'error': 'Invalid subscription tier'}), 400
+            
+        # Create booking record (in a real app, this would be saved to database)
+        booking_id = f"BOOK_{int(time.time())}"
+        
+        # Simulate booking creation
+        booking_data = {
+            'booking_id': booking_id,
+            'tier_id': tier_id,
+            'customer_name': customer_name,
+            'customer_phone': customer_phone,
+            'issue_description': issue_description,
+            'user_id': user['user_id'],
+            'status': 'pending',
+            'created_at': get_current_timestamp()
+        }
+        
+        # In a real application, you would:
+        # 1. Save booking to database
+        # 2. Send notification to available lawyers
+        # 3. Send confirmation email to customer
+        # 4. Process payment
+        
+        return jsonify({
+            'message': 'Lawyer consultation booked successfully',
+            'booking_id': booking_id,
+            'status': 'pending',
+            'next_steps': [
+                'You will receive a confirmation email shortly',
+                'An available lawyer will contact you within 24 hours',
+                'Check your email for further instructions'
+            ]
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error in book_lawyer: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
 
 
 
