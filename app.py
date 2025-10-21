@@ -44,9 +44,9 @@ except Exception:
     jwt = None
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(_name_)
+logger = logging.getLogger(__name__)
 
-app = Flask(_name_)
+app = Flask(__name__)
 CORS(app)
 init_db()
 
@@ -221,7 +221,7 @@ def root():
         "background:#ffe969}"
         "</style></head><body><div class='box'>"
         "<h1>NyaySetu</h1>"
-        "<p><b>Cyber Law Focus.</b> NyaySetu specializes in cyber law: online fraud, cybercrime complaints, data privacy, social media harassment, and electronic evidence. Ask questions, generate relevant forms, and connect with cyber-law lawyers.</p>"
+        "<p><b>Cyber Law Focus.</b> NyaySetu specializes in cyber law: online fraud, cybercrime complaints, data privacy, social media harassment, and electronic evidence. Ask questions, generate rele[...]
         "<div class='big-nav'>"
         "<a class='big-tile' href='#lawyer' aria-label='Book a Lawyer (call or chat)'>🧑‍⚖ Book a Lawyer</a>"
         "<a class='big-tile' href='#forms' aria-label='Make a Form (simple)'>📝 Make a Form</a>"
@@ -274,8 +274,8 @@ def root():
         "<script>"
         "document.getElementById('btnCall').addEventListener('click', function(){alert('Phone numbers will be added by admin soon.');});"
         "document.getElementById('btnChat').addEventListener('click', function(){alert('Chat with a lawyer coming soon.');});"
-        "async function loadAvailability(){try{const res=await fetch('/lawyers/availability',{headers:{'Authorization':localStorage.getItem('nyaysetu_token')?('Bearer '+localStorage.getItem('nyaysetu_token')):''}});if(!res.ok){return;}const data=await res.json();const el=document.getElementById('lawyerNote');if(el){const lines=(data.lawyers||[]).map(l=>${l.name} — ${l.specialty} — ${l.available?'Available':'Busy'});el.textContent = lines.join('\n') || el.textContent;}}catch(e){}}; loadAvailability();"
-        "document.getElementById('pdfForm').addEventListener('submit', async function(e){e.preventDefault(); const form=new FormData(this); const res=await fetch('/tools/summarize_pdf',{method:'POST', body:form}); const txt=await res.text(); document.getElementById('pdfOut').textContent=txt;});"
+        "async function loadAvailability(){try{const res=await fetch('/lawyers/availability',{headers:{'Authorization':localStorage.getItem('nyaysetu_token')?('Bearer '+localStorage.getItem('nyaysetu_[...]
+        "document.getElementById('pdfForm').addEventListener('submit', async function(e){e.preventDefault(); const form=new FormData(this); const res=await fetch('/tools/summarize_pdf',{method:'POST',[...]
         "</script>"
         "</div></body></html>"
     )
@@ -977,7 +977,7 @@ def get_forms():
         logger.error(f"Error in get_forms endpoint: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
-if _name_ == '_main_':
+if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_ENV', '') == 'development'
     app.run(host='0.0.0.0', port=port, debug=debug)
