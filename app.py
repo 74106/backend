@@ -140,7 +140,7 @@ def generate_basic_summary(text: str) -> str:
     summary_sentences = meaningful_sentences[:5]
     summary = '. '.join(summary_sentences)
     
-    if summary and not summary.endswith('.'): 
+    if summary and not summary.endswith('.'):
         summary += '.'
     
     return summary or text[:500] + "..." if len(text) > 500 else text
@@ -195,6 +195,7 @@ def get_current_user():
         return decode_jwt(token)
     except Exception:
         return None
+
  
 
 @app.route('/', methods=['GET'])
@@ -429,7 +430,7 @@ def book_lawyer():
             
         # Create booking record (in a real app, this would be saved to database)
         booking_id = f"BOOK_{int(time.time())}"
-            
+        
         # Simulate booking creation
         booking_data = {
             'booking_id': booking_id,
@@ -441,7 +442,7 @@ def book_lawyer():
             'status': 'pending',
             'created_at': get_current_timestamp()
         }
-            
+        
         # In a real application, you would:
         # 1. Save booking to database
         # 2. Send notification to available lawyers
@@ -458,7 +459,7 @@ def book_lawyer():
                 'Check your email for further instructions'
             ]
         }), 200
-            
+        
     except Exception as e:
         logger.error(f"Error in book_lawyer: {e}")
         return jsonify({'error': 'Internal server error'}), 500
@@ -522,6 +523,7 @@ def lawyers_book():
     except Exception as e:
         logger.error(f"Error in lawyers_book: {e}")
         return jsonify({'error': 'Internal server error'}), 500
+
 
 
 
