@@ -140,7 +140,7 @@ def generate_basic_summary(text: str) -> str:
     summary_sentences = meaningful_sentences[:5]
     summary = '. '.join(summary_sentences)
     
-    if summary and not summary.endswith('.'):
+    if summary and not summary.endswith('.'): 
         summary += '.'
     
     return summary or text[:500] + "..." if len(text) > 500 else text
@@ -195,90 +195,123 @@ def get_current_user():
         return decode_jwt(token)
     except Exception:
         return None
-
  
 
 @app.route('/', methods=['GET'])
 def root():
-    html = (
-        "<html><head><title>NyaySetu</title>"
-        "<meta name='viewport' content='width=device-width, initial-scale=1'/>"
-        "<style>"
-        "body{font-family:Segoe UI,Tahoma,Arial,sans-serif;padding:24px;line-height:1.6;background:#fff;color:#222;}"
-        "code{background:#f5f5f5;padding:2px 6px;border-radius:4px;}"
-        ".box{max-width:980px;margin:auto}"
-        ".grid{display:grid;grid-template-columns:1fr;gap:16px}"
-        "@media(min-width:900px){.grid{grid-template-columns:2fr 1fr}}"
-        ".card{background:#fafafa;border:1px solid #eee;padding:16px;border-radius:12px}"
-        ".button{display:inline-block;padding:12px 16px;border-radius:10px;border:1px solid #ddd;background:#0b5;"
-        "color:#fff;text-decoration:none;margin-right:8px;font-weight:600}"
-        ".button.secondary{background:#2276e3}"
-        ".button.ghost{background:#fff;color:#222;border-color:#bbb}"
-        ".endpoint{background:#fff;border:1px dashed #ddd;padding:10px;border-radius:8px;margin:6px 0}"
-        ".sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}"
-        ".big-nav{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}"
-        ".big-tile{flex:1 1 180px;min-width:180px;border:2px solid #222;border-radius:16px;padding:16px;text-align:center;font-size:18px;"
-        "background:#ffe969}"
-        "</style></head><body><div class='box'>"
-        "<h1>NyaySetu</h1>"
-        "<p><b>Cyber Law Focus.</b> NyaySetu specializes in cyber law: online fraud, cybercrime complaints, data privacy, social media harassment, and electronic evidence. Ask questions, generate rele[...]
-        "<div class='big-nav'>"
-        "<a class='big-tile' href='#lawyer' aria-label='Book a Lawyer (call or chat)'>🧑‍⚖ Book a Lawyer</a>"
-        "<a class='big-tile' href='#forms' aria-label='Make a Form (simple)'>📝 Make a Form</a>"
-        "<a class='big-tile' href='#chat' aria-label='Ask a Question'>💬 Ask a Question</a>"
-        "</div>"
-        "<div class='grid'>"
-        "  <div>"
-        "    <div id='lawyer' class='card'>"
-        "      <h2>Book a Cyber-Lawyer</h2>"
-        "      <p>See live availability of cyber-law specialists. Phone numbers will be added soon.</p>"
-        "      <a class='button' id='btnCall' href='javascript:void(0)'>📞 Call a Lawyer</a>"
-        "      <a class='button secondary' id='btnChat' href='javascript:void(0)'>💬 Chat to a Lawyer</a>"
-        "      <p id='lawyerNote' style='margin-top:8px;color:#444'>Numbers coming soon. For now, chat opens a placeholder.</p>"
-        "    </div>"
-        "    <div id='forms' class='card'>"
-        "      <h2>Cyber Law Form Generator</h2>"
-        "      <p>Get guided templates for cyber-complaints, online fraud, and data protection.</p>"
-        "      <div class='endpoint'><b>POST</b> <code>/generate_form</code> (Bearer token required)</div>"
-        "    </div>"
-        "    <div id='chat' class='card'>"
-        "      <h2>Ask a Cyber Law Question</h2>"
-        "      <div class='endpoint'><b>POST</b> <code>/chat</code> (Bearer token required)</div>"
-        "    </div>"
-        "    <div id='pdf' class='card'>"
-        "      <h2>PDF Summariser (for lawyers)</h2>"
-        "      <form id='pdfForm' enctype='multipart/form-data' method='post' action='/tools/summarize_pdf'>"
-        "        <label for='pdfFile'><b>Select PDF:</b></label><br/>"
-        "        <input name='file' id='pdfFile' type='file' accept='application/pdf' required />"
-        "        <button class='button ghost' type='submit'>Summarise PDF</button>"
-        "      </form>"
-        "      <pre id='pdfOut' style='white-space:pre-wrap;background:#fff;border:1px solid #eee;padding:12px;border-radius:8px;margin-top:10px'></pre>"
-        "    </div>"
-        "  </div>"
-        "  <div>"
-        "    <div class='card'>"
-        "      <h3>API Endpoints (Cyber Law)</h3>"
-        "      <p>Status: healthy. See <code>/health</code>.</p>"
-        "      <h4>Auth</h4>"
-        "      <div class='endpoint'><b>POST</b> <code>/auth/register</code> { email, password }</div>"
-        "      <div class='endpoint'><b>POST</b> <code>/auth/login</code> { email, password }</div>"
-        "      <h4>Data</h4>"
-        "      <div class='endpoint'><b>POST</b> <code>/chat</code></div>"
-        "      <div class='endpoint'><b>POST</b> <code>/generate_form</code></div>"
-        "      <div class='endpoint'><b>GET</b> <code>/data/chats</code> ?start&end&language&q</div>"
-        "      <div class='endpoint'><b>GET</b> <code>/data/forms</code> ?start&end&form_type&q</div>"
-        "      <div class='endpoint'><b>GET</b> <code>/lawyers/availability</code> (Bearer token required)</div>"
-        "    </div>"
-        "  </div>"
-        "</div>"
-        "<script>"
-        "document.getElementById('btnCall').addEventListener('click', function(){alert('Phone numbers will be added by admin soon.');});"
-        "document.getElementById('btnChat').addEventListener('click', function(){alert('Chat with a lawyer coming soon.');});"
-        "async function loadAvailability(){try{const res=await fetch('/lawyers/availability',{headers:{'Authorization':localStorage.getItem('nyaysetu_token')?('Bearer '+localStorage.getItem('nyaysetu_[...]
-        "document.getElementById('pdfForm').addEventListener('submit', async function(e){e.preventDefault(); const form=new FormData(this); const res=await fetch('/tools/summarize_pdf',{method:'POST',[...]
-        "</script>"
-        "</div></body></html>"
-    )
+    # Use a single triple-quoted string for the large HTML body to avoid unterminated string issues.
+    html = """
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name='viewport' content='width=device-width, initial-scale=1'/>
+  <title>NyaySetu</title>
+  <style>
+    body{font-family:Segoe UI,Tahoma,Arial,sans-serif;padding:24px;line-height:1.6;background:#fff;color:#222;}
+    code{background:#f5f5f5;padding:2px 6px;border-radius:4px;}
+    .box{max-width:980px;margin:auto}
+    .grid{display:grid;grid-template-columns:1fr;gap:16px}
+    @media(min-width:900px){.grid{grid-template-columns:2fr 1fr}}
+    .card{background:#fafafa;border:1px solid #eee;padding:16px;border-radius:12px}
+    .button{display:inline-block;padding:12px 16px;border-radius:10px;border:1px solid #ddd;background:#0b5;color:#fff;text-decoration:none;margin-right:8px;font-weight:600}
+    .button.secondary{background:#2276e3}
+    .button.ghost{background:#fff;color:#222;border-color:#bbb}
+    .endpoint{background:#fff;border:1px dashed #ddd;padding:10px;border-radius:8px;margin:6px 0}
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
+    .big-nav{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
+    .big-tile{flex:1 1 180px;min-width:180px;border:2px solid #222;border-radius:16px;padding:16px;text-align:center;font-size:18px;background:#ffe969}
+  </style>
+</head>
+<body>
+  <div class='box'>
+    <h1>NyaySetu</h1>
+    <p><strong>Cyber Law Focus.</strong> NyaySetu specializes in cyber law: online fraud, cybercrime complaints, data privacy, social media harassment, and electronic evidence. Ask questions, generate forms, and get summaries of legal PDFs.</p>
+
+    <div class='big-nav'>
+      <a class='big-tile' href='#lawyer' aria-label='Book a Lawyer (call or chat)'>🧑‍⚖ Book a Lawyer</a>
+      <a class='big-tile' href='#forms' aria-label='Make a Form (simple)'>📝 Make a Form</a>
+      <a class='big-tile' href='#chat' aria-label='Ask a Question'>💬 Ask a Question</a>
+    </div>
+
+    <div class='grid'>
+      <div>
+        <div id='lawyer' class='card'>
+          <h2>Book a Cyber-Lawyer</h2>
+          <p>See live availability of cyber-law specialists. Phone numbers will be added soon.</p>
+          <a class='button' id='btnCall' href='javascript:void(0)'>📞 Call a Lawyer</a>
+          <a class='button secondary' id='btnChat' href='javascript:void(0)'>💬 Chat to a Lawyer</a>
+          <p id='lawyerNote' style='margin-top:8px;color:#444'>Numbers coming soon. For now, chat opens a placeholder.</p>
+        </div>
+
+        <div id='forms' class='card'>
+          <h2>Cyber Law Form Generator</h2>
+          <p>Get guided templates for cyber-complaints, online fraud, and data protection.</p>
+          <div class='endpoint'><strong>POST</strong> <code>/generate_form</code> (Bearer token required)</div>
+        </div>
+
+        <div id='chat' class='card'>
+          <h2>Ask a Cyber Law Question</h2>
+          <div class='endpoint'><strong>POST</strong> <code>/chat</code> (Bearer token required)</div>
+        </div>
+
+        <div id='pdf' class='card'>
+          <h2>PDF Summariser (for lawyers)</h2>
+          <form id='pdfForm' enctype='multipart/form-data' method='post' action='/tools/summarize_pdf'>
+            <label for='pdfFile'><b>Select PDF:</b></label><br/>
+            <input name='file' id='pdfFile' type='file' accept='application/pdf' required />
+            <button class='button ghost' type='submit'>Summarise PDF</button>
+          </form>
+          <pre id='pdfOut' style='white-space:pre-wrap;background:#fff;border:1px solid #eee;padding:12px;border-radius:8px;margin-top:10px'></pre>
+        </div>
+      </div>
+
+      <div>
+        <div class='card'>
+          <h3>API Endpoints (Cyber Law)</h3>
+          <p>Status: healthy. See <code>/health</code>.</p>
+          <h4>Auth</h4>
+          <div class='endpoint'><strong>POST</strong> <code>/auth/register</code> { email, password }</div>
+          <div class='endpoint'><strong>POST</strong> <code>/auth/login</code> { email, password }</div>
+          <h4>Data</h4>
+          <div class='endpoint'><strong>POST</strong> <code>/chat</code></div>
+          <div class='endpoint'><strong>POST</strong> <code>/generate_form</code></div>
+          <div class='endpoint'><strong>GET</strong> <code>/data/chats</code> ?start&end&language&q</div>
+          <div class='endpoint'><strong>GET</strong> <code>/data/forms</code> ?start&end&form_type&q</div>
+          <div class='endpoint'><strong>GET</strong> <code>/lawyers/availability</code> (Bearer token required)</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      document.getElementById('btnCall').addEventListener('click', function(){ alert('Phone numbers will be added by admin soon.'); });
+      document.getElementById('btnChat').addEventListener('click', function(){ alert('Chat with a lawyer coming soon.'); });
+
+      async function loadAvailability(){
+        try{
+          const token = localStorage.getItem('nyaysetu_token') ? ('Bearer ' + localStorage.getItem('nyaysetu_token')) : null;
+          const headers = token ? { 'Authorization': token } : {};
+          const res = await fetch('/lawyers/availability', { headers });
+          // ignore result if unauthorized
+        } catch(e) { /* noop */ }
+      }
+
+      document.getElementById('pdfForm').addEventListener('submit', async function(e){
+        e.preventDefault();
+        const form = new FormData(this);
+        try{
+          const res = await fetch('/tools/summarize_pdf', { method: 'POST', body: form, headers: { 'Authorization': localStorage.getItem('nyaysetu_token') ? ('Bearer ' + localStorage.getItem('nyaysetu_token')) : '' } });
+          const data = await res.json();
+          document.getElementById('pdfOut').textContent = data.summary || JSON.stringify(data, null, 2);
+        }catch(err){ document.getElementById('pdfOut').textContent = 'Error summarizing PDF'; }
+      });
+
+      loadAvailability();
+    </script>
+  </div>
+</body>
+</html>
+"""
     return make_response(html, 200)
 
 @app.route('/lawyers/availability', methods=['GET'])
@@ -396,7 +429,7 @@ def book_lawyer():
             
         # Create booking record (in a real app, this would be saved to database)
         booking_id = f"BOOK_{int(time.time())}"
-        
+            
         # Simulate booking creation
         booking_data = {
             'booking_id': booking_id,
@@ -408,7 +441,7 @@ def book_lawyer():
             'status': 'pending',
             'created_at': get_current_timestamp()
         }
-        
+            
         # In a real application, you would:
         # 1. Save booking to database
         # 2. Send notification to available lawyers
@@ -425,7 +458,7 @@ def book_lawyer():
                 'Check your email for further instructions'
             ]
         }), 200
-        
+            
     except Exception as e:
         logger.error(f"Error in book_lawyer: {e}")
         return jsonify({'error': 'Internal server error'}), 500
@@ -489,7 +522,6 @@ def lawyers_book():
     except Exception as e:
         logger.error(f"Error in lawyers_book: {e}")
         return jsonify({'error': 'Internal server error'}), 500
-
 
 
 
