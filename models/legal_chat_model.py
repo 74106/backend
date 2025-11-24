@@ -108,9 +108,9 @@ def get_gemini_answer(question: str, language: str = 'en') -> str:
         primary_model = os.environ.get('GEMINI_MODEL', 'gemini-2.0-flash-exp')
         model_candidates = [
             primary_model,
-            'gemini-1.5-flash-exp',
-            'gemini-2.0-flash-exp',
-            'gemini-2.5-flash-exp'
+            'gemini-3.0-pro',
+            'gemini-2.5-flash-exp',
+            'gemini-2.0-flash-exp'
         ]
 
         legal_prompt = legal_advisor.get_legal_prompt(question, language)
