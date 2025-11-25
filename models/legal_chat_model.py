@@ -108,7 +108,6 @@ def get_gemini_answer(question: str, language: str = 'en') -> str:
         primary_model = os.environ.get('GEMINI_MODEL', 'gemini-2.0-flash-exp')
         model_candidates = [
             primary_model,
-            'gemini-3.0-flash-exp',
             'gemini-2.5-flash-exp',
             'gemini-2.0-flash-exp'
         ]
