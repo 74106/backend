@@ -380,7 +380,7 @@ def get_intelligent_legal_response(question: str, language: str = 'en') -> str:
         'ଏଫଆଇଆର', 'ପୋଲିସ', 'ଅଭିଯୋଗ', 'ଅପରାଧ', 'ଅପରାଧୀ', 'ଗିରଫତାରି', 'ଜାମିନ', 'କୋର୍ଟ', 'କାନୁନିକ'
     ]
     
-elif any(word in question_lower for word in fir_keywords):
+    elif any(word in question_lower for word in fir_keywords):
         response = """**Filing FIR and Criminal Law in India**
 
 **How to File an FIR:**
