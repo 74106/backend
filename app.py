@@ -20,6 +20,7 @@ import os
 import time
 import json
 import secrets
+import re
 from urllib.parse import urlencode
 
 # --- Securely load env ---
@@ -214,6 +215,80 @@ def _jaccard(a: set[str], b: set[str]) -> float:
     return float(inter) / float(union) if union else 0.0
 
 
+def _summarize_text(content: str, max_length: int = 360) -> str:
+    """Generate a short, reassuring summary snippet."""
+    summary = (content or "").strip()
+    summary = re.sub(r"\s+", " ", summary)
+    if len(summary) > max_length:
+        summary = summary[: max(0, max_length - 3)].rstrip() + "..."
+    return summary
+
+
+def _search_cases_by_court(
+    query: str,
+    limit: int = 3,
+    court_hints: list[str] | None = None,
+    fallback_court_label: str | None = None,
+) -> list[dict]:
+    """Fetch official case summaries filtered by court level."""
+    results: list[dict] = []
+    court_hints = [h.lower() for h in (court_hints or []) if h]
+    api_key = os.environ.get('INDIAN_KANOON_API_KEY')
+
+    def _matches_court(value: str | None) -> bool:
+        if not court_hints:
+            return True
+        val = (value or '').lower()
+        return any(h in val for h in court_hints)
+
+    if api_key and requests is not None:
+        try:
+            url = 'https://api.indiankanoon.org/search/'
+            params = {'formInput': query, 'pagenum': 0}
+            headers = {'Authorization': f'Token {api_key}'}
+            resp = requests.get(url, params=params, headers=headers, timeout=8)
+            if resp.status_code == 200:
+                data = resp.json()
+                for item in data.get('results') or []:
+                    court = item.get('court') or ''
+                    if not _matches_court(court):
+                        continue
+                    results.append({
+                        'title': item.get('title') or item.get('case_title') or 'Untitled case',
+                        'court': court or fallback_court_label or '',
+                        'date': item.get('judgement_date') or item.get('date') or '',
+                        'citation': item.get('citation') or item.get('equivalent_citations') or '',
+                        'url': item.get('url') or item.get('doc_url') or '',
+                        'summary': _summarize_text(item.get('snippet') or item.get('headnote') or '')
+                    })
+                    if len(results) >= limit:
+                        break
+            else:
+                logger.info(f"Kanoon HTTP {resp.status_code} for showcase query '{query}'")
+        except Exception as err:
+            logger.info(f"Kanoon showcase query failed ({err}); falling back to open search")
+
+    if not results:
+        # Fallback: DuckDuckGo search constrained to official domains
+        ddg_query = query
+        if court_hints:
+            ddg_query = f"{query} {' '.join(court_hints)}"
+        fallback = _duckduckgo_search_official(ddg_query, limit=limit)
+        for item in fallback:
+            results.append({
+                'title': item.get('title') or 'Official judgment',
+                'court': fallback_court_label or '',
+                'date': item.get('date') or '',
+                'citation': item.get('citation') or '',
+                'url': item.get('url') or '',
+                'summary': _summarize_text(item.get('snippet') or '')
+            })
+            if len(results) >= limit:
+                break
+
+    return results[:limit]
+
+
 @app.route('/similar_cases', methods=['POST'])
 def similar_cases():
     """Return similar past chats (cases) for a given user question.
@@ -225,7 +300,7 @@ def similar_cases():
         user = get_current_user()
         if not user:
             return jsonify({'error': 'Unauthorized'}), 401
-
+            
         data = request.get_json() or {}
         question = (data.get('question') or '').strip()
         limit = data.get('limit') or 5
@@ -272,6 +347,50 @@ def similar_cases():
         return jsonify({'similar': scored[:limit]}), 200
     except Exception as e:
         logger.error(f"Error in similar_cases endpoint: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@app.route('/cases/previous', methods=['GET'])
+def previous_cases():
+    """Return recent landmark decisions from Supreme, High, and District courts."""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': 'Unauthorized'}), 401
+
+        try:
+            per_court = int(request.args.get('limit') or 3)
+        except Exception:
+            per_court = 3
+        per_court = max(1, min(per_court, 5))
+
+        showcase = {
+            'supreme_court': _search_cases_by_court(
+                "Supreme Court of India cyber law victim relief judgement",
+                limit=per_court,
+                court_hints=['supreme court'],
+                fallback_court_label='Supreme Court of India',
+            ),
+            'high_courts': _search_cases_by_court(
+                "High Court cyber fraud compensation order",
+                limit=per_court,
+                court_hints=['high court'],
+                fallback_court_label='High Court',
+            ),
+            'district_courts': _search_cases_by_court(
+                "District court cyber crime conviction India",
+                limit=per_court,
+                court_hints=['district court', 'sessions court'],
+                fallback_court_label='District / Sessions Court',
+            ),
+        }
+
+        return jsonify({
+            'cases': showcase,
+            'generated_at': get_current_timestamp(),
+        }), 200
+    except Exception as e:
+        logger.error(f"Error in previous_cases endpoint: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
 
@@ -379,7 +498,7 @@ def case_law():
         user = get_current_user()
         if not user:
             return jsonify({'error': 'Unauthorized'}), 401
-
+        
         q = (request.args.get('q') or '').strip()
         if not q:
             return jsonify({'error': 'Query (q) is required'}), 400
@@ -404,8 +523,8 @@ def case_law():
             # Indian Kanoon search API (if configured)
             try:
                 url = 'https://api.indiankanoon.org/search/'
-                params = { 'formInput': q, 'pagenum': 0 }
-                headers = { 'Authorization': f'Token {api_key}' }
+                params = {'formInput': q, 'pagenum': 0}
+                headers = {'Authorization': f'Token {api_key}'}
                 resp = requests.get(url, params=params, headers=headers, timeout=8)
                 if resp.status_code == 200:
                     data = resp.json()
@@ -430,7 +549,7 @@ def case_law():
         if not results:
             results = _duckduckgo_search_official(q, limit=limit)
 
-        _CASELAW_CACHE[cache_key] = { 'ts': now, 'data': results }
+        _CASELAW_CACHE[cache_key] = {'ts': now, 'data': results}
         # Bound cache size
         if len(_CASELAW_CACHE) > 64:
             try:
@@ -1287,7 +1406,7 @@ def get_forms():
         
         forms = fetch_forms_filtered(start=start, end=end, form_type=form_type, q=q)
         return jsonify({'forms': forms}), 200
-
+        
     except Exception as e:
         logger.error(f"Error in get_forms endpoint: {e}")
         return jsonify({'error': 'Internal server error'}), 500
