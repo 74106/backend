@@ -1,4 +1,4 @@
-# NyaySetu ⚖️
+# CyberVerge ⚖️
 
 *Bridging Justice through Technology*
 
