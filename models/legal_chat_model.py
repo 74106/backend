@@ -104,12 +104,14 @@ def get_gemini_answer(question: str, language: str = 'en') -> str:
         if not api_key:
             return "Gemini API key not set. Set GEMINI_API_KEY environment variable."
 
-        # Endpoint and model selection (use v1beta and Gemini 2.0 models)
-        primary_model = os.environ.get('GEMINI_MODEL', 'gemini-2.0-flash-exp')
+        # Endpoint and model selection (use v1beta and Gemini 3.x models)
+        primary_model = os.environ.get('GEMINI_MODEL', 'gemini-3.0-flash')
         model_candidates = [
             primary_model,
+            'gemini-3.0-flash',
+            'gemini-3.0-pro',
             'gemini-2.5-flash-exp',
-            'gemini-2.0-flash-exp'
+            'gemini-2.0-flash-exp',
         ]
 
         legal_prompt = legal_advisor.get_legal_prompt(question, language)
@@ -119,7 +121,7 @@ def get_gemini_answer(question: str, language: str = 'en') -> str:
         }
 
         # Use translated instruction based on the language
-        base_instruction = "You are a helpful legal AI for Indian law. Answer clearly and practically. Always reference current Indian legal framework (BNS, BNSS, BSA instead of IPC, CrPC, Evidence Act)."
+        base_instruction = "You are a helpful legal AI for Indian law. Answer clearly and practically. Always reference current Indian legal framework (BNS, BNSS, BSA instead of IPC, CrPC, Evidence Act). Cite specific laws and sections. If unsure, advise consulting a qualified lawyer."
         instruction = legal_advisor.translate_text(base_instruction, language)
 
         payload = {
@@ -174,6 +176,10 @@ def get_gemini_answer(question: str, language: str = 'en') -> str:
         except Exception:
             pass
         return legal_advisor.get_fallback_response(language)
+
+ 
+
+ 
 
 def get_fallback_legal_response(question: str) -> str:
     """Provide a fallback legal response when API is not available"""
@@ -357,15 +363,15 @@ def get_intelligent_legal_response(question: str, language: str = 'en') -> str:
         # Bengali
         'এফআইআর', 'পুলিশ', 'অভিযোগ', 'অপরাধ', 'অপরাধী', 'গ্রেফতার', 'জামিন', 'আদালত', 'আইনি',
         # Tamil
-        'எஃப்ஐஆர்', 'காவல்துறை', 'புகார்', 'குற்றம்', 'குற்றவாளி', 'கைது', 'ஜாமீன்', 'நீதிமன்றம்', 'சட்டம்',
+        'எஃப்ஐஆர்', 'காவல்துறை', 'புகார்', 'குற்றம்', 'குற்றவாளி', 'கைது', 'ஜாமீன்', 'நீதிமன்றம்', 'சட்ட',
         # Telugu
-        'ఎఫ్ఐఆర్', 'పోలీసు', 'ఫిర్యాదు', 'నేరం', 'నేరస్థుడు', 'అరెస్టు', 'జామీను', 'కోర్టు', 'చట్టం',
+        'ఎఫ్ఐఆర్', 'పోలీసు', 'ఫిర్యాదు', 'నేరం', 'నేరస్థుడు', 'అరెస్టు', 'జామీను', 'కోర్టు', 'చట్టపరమైన',
         # Marathi
         'एफआयआर', 'पोलिस', 'तक्रार', 'गुन्हा', 'गुन्हेगार', 'अटक', 'जामीन', 'न्यायालय', 'कायदेशीर',
         # Gujarati
         'એફઆઈઆર', 'પોલીસ', 'ફરિયાદ', 'ગુનો', 'ગુનેગાર', 'અટકાવ', 'જામીન', 'કોર્ટ', 'કાયદાકીય',
         # Malayalam
-        'എഫ്ഐആർ', 'പോലീസ്', 'പരാതി', 'കുറ്റം', 'കുറ്റവാളി', 'അറസ്റ്റ്', 'ജാമ്യം', 'കോടതി', 'നിയമം',
+        'എഫ്ഐആർ', 'പോലീസ്', 'പരാതി', 'കുറ്റം', 'കുറ്റവാളി', 'അറസ്റ്റ്', 'ജാമ്യം', 'കോടതി', 'നിയമപരമായ',
         # Punjabi
         'ਏਫਆਈਆਰ', 'ਪੁਲਿਸ', 'ਸ਼ਿਕਾਇਤ', 'ਅਪਰਾਧ', 'ਅਪਰਾਧੀ', 'ਗਿਰਫਤਾਰੀ', 'ਜ਼ਮਾਨਤ', 'ਕੋਰਟ', 'ਕਾਨੂੰਨੀ',
         # Kannada
@@ -374,7 +380,7 @@ def get_intelligent_legal_response(question: str, language: str = 'en') -> str:
         'ଏଫଆଇଆର', 'ପୋଲିସ', 'ଅଭିଯୋଗ', 'ଅପରାଧ', 'ଅପରାଧୀ', 'ଗିରଫତାରି', 'ଜାମିନ', 'କୋର୍ଟ', 'କାନୁନିକ'
     ]
     
-    if any(word in question_lower for word in fir_keywords):
+elif any(word in question_lower for word in fir_keywords):
         response = """**Filing FIR and Criminal Law in India**
 
 **How to File an FIR:**
@@ -413,11 +419,11 @@ def get_intelligent_legal_response(question: str, language: str = 'en') -> str:
         # Hindi
         'तलाक', 'विवाह', 'संरक्षण', 'गुजारा भत्ता', 'रखरखाव', 'परिवार', 'पति', 'पत्नी', 'बच्चा',
         # Bengali
-        'তালাক', 'বিবাহ', 'অভিভাবকত্ব', 'ভরণপোষণ', 'রক্ষণাবেক্ষণ', 'পরিবার', 'স্বামী', 'স্ত্রী', 'শিশু',
+        'তালাক', 'বিবাহ', 'অভিভাবকত্ব', 'ভরণপোষণ', 'রক্ষণাবেক্ষণ', 'পরিবার', 'স্বামী', 'স্ত্রী', 'সন্তান',
         # Tamil
         'விவாகரத்து', 'திருமணம்', 'வளர்ப்பு', 'பராமரிப்பு', 'குடும்பம்', 'கணவர்', 'மனைவி', 'குழந்தை',
         # Telugu
-        'విడాకులు', 'వివాహం', 'సంరక్షణ', 'జీవనాధారం', 'రక్షణ', 'కుటుంబం', 'భర్త', 'భార్య', 'పిల్ల',
+        'విడాకులు', 'వివాహం', 'సంరక్షణ', 'జీవనాధారం', 'రక్షణ', 'కుటుంబం', 'భర్త', 'భార్య', 'పిల్లలు',
         # Marathi
         'घटस्फोट', 'लग्न', 'संरक्षण', 'गुजारा भत्ता', 'रखरखाव', 'कुटुंब', 'पती', 'पत्नी', 'मूल',
         # Gujarati
@@ -432,7 +438,7 @@ def get_intelligent_legal_response(question: str, language: str = 'en') -> str:
         'ବିବାହ ବିଚ୍ଛେଦ', 'ବିବାହ', 'ସଂରକ୍ଷଣ', 'ଜୀବିକା', 'ରକ୍ଷଣ', 'ପରିବାର', 'ପତି', 'ପତ୍ନୀ', 'ପିଲା'
     ]
     
-    if any(word in question_lower for word in family_keywords):
+elif any(word in question_lower for word in family_keywords):
         response = """**Family Law in India - Marriage, Divorce & Custody**
 
 **Divorce Process:**
@@ -492,7 +498,7 @@ def get_intelligent_legal_response(question: str, language: str = 'en') -> str:
         'ଚୁକ୍ତି', 'ଚୁକ୍ତି', 'ଉଲ୍ଲଂଘନ', 'କ୍ଷତି', 'ଚାକିରି', 'କାମ', 'ବେତନ'
     ]
     
-    if any(word in question_lower for word in contract_keywords):
+elif any(word in question_lower for word in contract_keywords):
         response = """**Contract Law in India**
 
 **Essential Elements of Valid Contract:**
@@ -544,7 +550,7 @@ def get_intelligent_legal_response(question: str, language: str = 'en') -> str:
         # Gujarati
         'ગ્રાહક', 'પરતાવો', 'દોષપૂર્ણ', 'વોરંટી', 'ફરિયાદ', 'ઉત્પાદન', 'સેવા', 'ખરીદી',
         # Malayalam
-        'ഉപഭോക്താവ്', 'തിരിച്ചുകൊടുക്കൽ', 'കുറ്റവാളി', 'വാറന്റി', 'പരാതി', 'ഉൽപ്പന്നം', 'സേവനം', 'വാങ്ങൽ',
+        'ഉപഭോക്താവ്', 'തിരിച്ചുകൊടുക്കൽ', 'കുറ്റവാളി', 'വാറന്റി', 'പരാതി', 'ഉൽപ്പന്നം', 'സേവ', 'വാങ്ങൽ',
         # Punjabi
         'ਗ੍ਰਾਹਕ', 'ਵਾਪਸੀ', 'ਦੋਸ਼ਪੂਰਨ', 'ਵਾਰੰਟੀ', 'ਸ਼ਿਕਾਇਤ', 'ਉਤਪਾਦ', 'ਸੇਵਾ', 'ਖਰੀਦ',
         # Kannada
@@ -553,7 +559,7 @@ def get_intelligent_legal_response(question: str, language: str = 'en') -> str:
         'ଗ୍ରାହକ', 'ଫେରସ୍ତ', 'ଦୋଷପୂର୍ଣ୍ଣ', 'ଓାରାଣ୍ଟି', 'ଅଭିଯୋଗ', 'ଉତ୍ପାଦ', 'ସେବା', 'କ୍ରୟ'
     ]
     
-    if any(word in question_lower for word in consumer_keywords):
+elif any(word in question_lower for word in consumer_keywords):
         response = """**Consumer Rights in India**
 
 **Your Rights as a Consumer:**
@@ -580,7 +586,7 @@ def get_intelligent_legal_response(question: str, language: str = 'en') -> str:
 
 **⚠️ Important**: Keep all receipts and documents. File complaint within 2 years of cause of action."""
 
-    else:
+else:
         response = """**General Legal Guidance for India**
 
 **Your Fundamental Rights:**
@@ -612,7 +618,7 @@ def get_intelligent_legal_response(question: str, language: str = 'en') -> str:
 **⚠️ Important Disclaimer**: 
 This is general legal information. Laws are complex and vary by case. Always consult a qualified lawyer for specific legal advice. For urgent matters, contact legal aid services immediately."""
 
-    # Translate if needed
+# Translate if needed
     if language != 'en':
         try:
             translated_response = legal_advisor.translate_text(response, language)
