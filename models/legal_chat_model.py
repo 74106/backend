@@ -29,10 +29,10 @@ class LegalAdviceGenerator:
             'te': 'te',  # Telugu
             'mr': 'mr',  # Marathi
             'gu': 'gu',  # Gujarati
-            'kn': 'kn',  # Kannada
+            'kn': 'kn',  # Konkani
             'ml': 'ml',  # Malayalam
             'pa': 'pa',  # Punjabi
-            'ka': 'ka',  # Kannada (alternate code)
+            'ka': 'ka',  # Kannada 
         }
         
         # Base English legal prompt - will be translated to other languages
@@ -58,7 +58,7 @@ Question: {question}
 Provide legal advice:"""
         
         # Base fallback response - will be translated to other languages
-        self.base_fallback_response = "I apologize, but I'm currently unable to provide detailed legal advice. Please consult a qualified lawyer for your specific situation."
+        self.base_fallback_response = 'I apologize, but I\'m currently unable to provide detailed legal advice. Please consult a qualified lawyer for your specific situation.'
     
     def translate_text(self, text: str, target_language: str) -> str:
         """Translate text to target language using deep-translator"""
@@ -96,6 +96,203 @@ Provide legal advice:"""
 # Global instance
 legal_advisor = LegalAdviceGenerator()
 
+# Keyword inventories reused by the offline heuristic responder. They intentionally
+# cover common Indian languages so that simple substring checks still match.
+TENANT_KEYWORDS = [
+    'tenant', 'rent', 'eviction', 'landlord', 'lease', 'rental',
+    'किरायेदार', 'किराया', 'बेदखली', 'मकान मालिक', 'लीज', 'किराये',
+    'ভাড়াটিয়া', 'ভাড়া', 'উচ্ছেদ', 'বাড়িওয়ালা', 'লিজ',
+    'வாடகைதாரர்', 'வாடகை', 'வெளியேற்றம்', 'வீட்டு உரிமையாளர்',
+    'అద్దెదారుడు', 'అద్దె', 'బహిష్కరణ', 'ఇల్లు యజమాని',
+    'भाडेकरू', 'भाडे', 'घर मालक',
+    'ભાડેકરૂ', 'ભાડું', 'ઘર માલિક',
+    'വാടകക്കാരൻ', 'വാടക', 'വീട് ഉടമ',
+    'ਕਿਰਾਏਦਾਰ', 'ਘਰ ਮਾਲਕ',
+    'ಬಾಡಿಗೆದಾರ', 'ಮನೆ ಮಾಲೀಕ',
+    'ଭଡ଼ାଦାର', 'ଘର ମାଲିକ'
+]
+
+FIR_KEYWORDS = [
+    'fir', 'police', 'complaint', 'crime', 'criminal', 'arrest', 'bail', 'court',
+    'एफआईआर', 'पुलिस', 'शिकायत', 'अपराध', 'गिरफ्तार', 'जमानत', 'अदालत',
+    'এফআইআর', 'পুলিশ', 'অভিযোগ', 'অপরাধ', 'গ্রেফতার', 'জামিন', 'আদালত',
+    'எஃப்ஐஆர்', 'காவல்துறை', 'புகார்', 'குற்றம்', 'கைது', 'ஜாமீன்', 'நீதிமன்றம்',
+    'ఎఫ్ఐఆర్', 'పోలీసు', 'ఫిర్యాదు', 'నేరం', 'అరెస్టు', 'జామీను',
+    'एफआयआर', 'पोलिस', 'तक्रार', 'गुन्हा', 'गुन्हेगार', 'अटक', 'जामीन',
+    'એફઆઈઆર', 'પોલીસ', 'ફરિયાદ', 'ગુનો', 'ગુનેગાર', 'જામીન',
+    'എഫ്ഐആർ', 'പോലീസ്', 'പരാതി', 'കുറ്റം', 'അറസ്റ്റ്', 'ജാമ്യം',
+    'ਏਫਆਈਆਰ', 'ਪੁਲਿਸ', 'ਸ਼ਿਕਾਇਤ', 'ਅਪਰਾਧ', 'ਗਿਰਫਤਾਰੀ', 'ਜ਼ਮਾਨਤ',
+    'ಎಫ್ಐಆರ್', 'ಪೊಲೀಸ್', 'ದೂರು', 'ಅರೆಸ್ಟ್', 'ಜಾಮೀನು',
+    'ଏଫଆଇଆର', 'ପୋଲିସ', 'ଅଭିଯୋଗ', 'ଅପରାଧ', 'ଗିରଫତାରି', 'ଜାମିନ'
+]
+
+FAMILY_KEYWORDS = [
+    'divorce', 'marriage', 'custody', 'alimony', 'maintenance', 'family', 'spouse', 'child',
+    'तलाक', 'विवाह', 'संरक्षण', 'गुजारा भत्ता', 'परिवार', 'पति', 'पत्नी', 'बच्चा',
+    'তালাক', 'বিবাহ', 'অভিভাবকত্ব', 'ভরণপোষণ', 'পরিবার', 'স্বামী', 'স্ত্রী', 'সন্তান',
+    'விவாகரத்து', 'திருமணம்', 'வளர்ப்பு', 'பராமரிப்பு', 'குடும்பம்', 'கணவர்', 'மனைவி', 'குழந்தை',
+    'విడాకులు', 'వివాహం', 'సంరక్షణ', 'జీవనాధారం', 'కుటుంబం', 'భర్త', 'భార్య', 'పిల్లలు',
+    'घटस्फोट', 'लग्न', 'संरक्षण', 'कुटुंब', 'पती', 'पत्नी',
+    'છૂટાછેડા', 'લગ્ન', 'સંભાળ', 'કુટુંબ', 'પતિ', 'પત્ની',
+    'വിവാഹമോചനം', 'വിവാഹം', 'സംരക്ഷണം', 'കുടുംബം', 'ഭർത്താവ്', 'ഭാര്യ', 'കുട്ടി',
+    'ਤਲਾਕ', 'ਵਿਆਹ', 'ਸੰਭਾਲ', 'ਪਰਿਵਾਰ', 'ਪਤੀ', 'ਪਤਨੀ', 'ਬੱਚਾ',
+    'ವಿವಾಹ ವಿಚ್ಛೇದನ', 'ವಿವಾಹ', 'ಸಂರಕ್ಷಣೆ', 'ಕುಟುಂಬ', 'ಪತಿ', 'ಪತ್ನಿ', 'ಮಗು',
+    'ବିବାହ ବିଚ୍ଛେଦ', 'ବିବାହ', 'ସଂରକ୍ଷଣ', 'ପରିବାର', 'ପତି', 'ପତ୍ନୀ', 'ପିଲା'
+]
+
+CONTRACT_KEYWORDS = [
+    'contract', 'agreement', 'breach', 'damages', 'employment', 'job', 'work', 'salary',
+    'अनुबंध', 'समझौता', 'उल्लंघन', 'नुकसान', 'रोजगार', 'नौकरी', 'काम', 'वेतन',
+    'চুক্তি', 'লঙ্ঘন', 'ক্ষতি', 'চাকরি', 'কাজ', 'বেতন',
+    'ஒப்பந்தம்', 'மீறல்', 'சேதம்', 'வேலை', 'சம்பளம்',
+    'ఒప్పందం', 'ఉల్లంఘన', 'నష్టం', 'ఉద్యోగం', 'జీతం',
+    'करार', 'उल्लंघन', 'नुकसान', 'रोजगार', 'नोकरी', 'काम', 'पगार',
+    'કરાર', 'ઉલ્લંઘન', 'નુકસાન', 'રોજગાર', 'નોકરી', 'કામ', 'પગાર',
+    'കരാർ', 'ലംഘനം', 'നഷ്ടം', 'ജോലി', 'ശമ്പളം',
+    'ਸਮਝੌਤਾ', 'ਉਲੰਘਣ', 'ਨੁਕਸਾਨ', 'ਰੋਜ਼ਗਾਰ', 'ਨੌਕਰੀ', 'ਕੰਮ', 'ਤਨਖਾਹ',
+    'ಒಪ್ಪಂದ', 'ಉಲ್ಲಂಘನೆ', 'ನಷ್ಟ', 'ಉದ್ಯೋಗ', 'ಕೆಲಸ', 'ಸಂಬಳ',
+    'ଚୁକ୍ତି', 'ଉଲ୍ଲଂଘନ', 'କ୍ଷତି', 'ଚାକିରି', 'କାମ', 'ବେତନ'
+]
+
+CONSUMER_KEYWORDS = [
+    'consumer', 'refund', 'defective', 'warranty', 'product', 'service', 'purchase',
+    'उपभोक्ता', 'वापसी', 'दोषपूर्ण', 'वारंटी', 'शिकायत', 'उत्पाद', 'सेवा', 'खरीद',
+    'ভোক্তা', 'ফেরত', 'ত্রুটিপূর্ণ', 'ওয়ারেন্টি', 'অভিযোগ', 'পণ্য', 'সেবা', 'ক্রয়',
+    'நுகர்வோர்', 'குறைபாடு', 'உத்தரவாதம்', 'தயாரிப்பு', 'சேவை', 'வாங்குதல்',
+    'వినియోగదారుడు', 'వాపసు', 'లోపం', 'వారంటీ', 'ఫిర్యాదు', 'ఉత్పత్తి', 'సేవ', 'కొనుగోలు',
+    'ग्राहक', 'परतावा', 'दोषपूर्ण', 'वॉरंटी', 'तक्रार', 'उत्पाद', 'सेवा', 'खरेदी',
+    'ગ્રાહક', 'પરતાવો', 'દોષપૂર્ણ', 'વોરંટી', 'ઉત્પાદન', 'સેવા', 'ખરીદી',
+    'ഉപഭോക്താവ്', 'തിരിച്ചുകൊടുക്കൽ', 'വാറന്റി', 'പരാതി', 'ഉൽപ്പന്നം', 'സേവനങ്ങൾ',
+    'ਗ੍ਰਾਹਕ', 'ਵਾਪਸੀ', 'ਦੋਸ਼ਪੂਰਨ', 'ਵਾਰੰਟੀ', 'ਸ਼ਿਕਾਇਤ', 'ਉਤਪਾਦ', 'ਸੇਵਾ', 'ਖਰੀਦ',
+    'ಗ್ರಾಹಕ', 'ಹಿಂತಿರುಗಿಸುವಿಕೆ', 'ದೋಷಪೂರಿತ', 'ದೂರು', 'ಉತ್ಪನ್ನ', 'ಸೇವೆ', 'ಖರೀದಿ',
+    'ଗ୍ରାହକ', 'ଫେରସ୍ତ', 'ଦୋଷପୂର୍ଣ୍ଣ', 'ଓାରାଣ୍ଟି', 'ଉତ୍ପାଦ', 'ସେବା', 'କ୍ରୟ'
+]
+
+OFFLINE_RESPONSE_TEMPLATES = [
+    (
+        TENANT_KEYWORDS,
+        """**Tenant Rights in India - Comprehensive Guide**
+
+**Key Rights You Have:**
+1. **Right to Peaceful Enjoyment**: Landlord cannot disrupt possession without notice
+2. **Right to Essential Services**: Water, electricity and lifts must be maintained
+3. **Right to Privacy**: 24‑hour notice before inspection/entry
+4. **Protection from Arbitrary Eviction**: Written notice + valid legal grounds required
+5. **Right to Fair Rent**: Increase must follow Rent Control/Model Tenancy Act norms
+
+**Important Laws:**
+- Transfer of Property Act, 1882
+- Model Tenancy Act, 2021 (if adopted by your state)
+- State‑specific Rent Control Acts
+
+**Next steps if your rights are violated:**
+1. Document calls, messages, videos and bills
+2. Send a legal notice referencing the tenancy agreement
+3. Approach the Rent Authority / Rent Court under the Model Tenancy Act
+4. Seek injunction/interim relief if the landlord tries illegal eviction"""
+    ),
+    (
+        FIR_KEYWORDS,
+        """**Filing FIR & Criminal Procedure (BNSS, 2023)**
+
+**Steps to file an FIR:**
+1. Go to the police station with jurisdiction over the incident
+2. Provide date, time, location, people involved and evidence
+3. Insist on a free copy of the FIR (Section 173 BNSS)
+4. Track investigation status through the Investigating Officer
+
+**If police refuse to register FIR:**
+1. Send a written complaint to the Superintendent of Police (Section 193 BNSS)
+2. File an application before the Magistrate under Section 156(3) BNSS
+3. Escalate to State Human Rights Commission / cybercrime portal for cyber offences
+
+**Key statutes:**
+- Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023
+- Bharatiya Nyaya Sanhita (BNS), 2023
+- Protection of Human Rights Act, 1993"""
+    ),
+    (
+        FAMILY_KEYWORDS,
+        """**Family Law: Divorce, Custody & Maintenance**
+
+**Divorce grounds (mutual + contested):**
+- Cruelty, adultery, desertion (Sections 28‑32, Special Marriage Act)
+- Conversion, mental disorder, venereal disease (relevant personal laws)
+- Mutual consent: two motions, 6‑month cooling (waivable by court)
+
+**Child custody factors:**
+- Best interest & welfare of child is paramount
+- Joint/visitation orders possible; child’s preference (12+ years) considered
+- Guardians and Wards Act, 1890 governs interim guardianship
+
+**Maintenance/alimony:**
+- Section 125 BNSS (successor to CrPC) for interim/regular maintenance
+- Hindu Marriage Act Sections 24/25, Special Marriage Act Section 37
+- Enforcement through civil imprisonment/attachment if unpaid"""
+    ),
+    (
+        CONTRACT_KEYWORDS,
+        """**Contract & Employment Remedies**
+
+**Valid contract essentials (Indian Contract Act, 1872):**
+1. Offer + acceptance
+2. Lawful consideration
+3. Competent parties (18+, sound mind)
+4. Free consent (no coercion/fraud/misrepresentation)
+5. Lawful object
+
+**Breach remedies:**
+- Specific performance (Specific Relief Act, 2018)
+- Damages (compensatory, liquidated, nominal)
+- Injunctions to restrain competing acts
+- Rescission + restitution
+
+**Action plan:**
+1. Compile signed agreements, emails, invoices, salary slips
+2. Send a legal notice citing clauses breached
+3. Approach commercial court / labour authority depending on contract type
+4. Seek interim relief (Order XXXIX CPC) if urgent"""
+    ),
+    (
+        CONSUMER_KEYWORDS,
+        """**Consumer Protection Act, 2019 Workflow**
+
+**Your rights:**
+1. Right to safety from hazardous goods/services
+2. Right to information about quality, purity and price
+3. Right to choose and be heard
+4. Right to seek redress before Consumer Commissions
+
+**Where to file:**
+- District Commission: value up to ₹1 crore
+- State Commission: ₹1 crore – ₹10 crore
+- National Commission: above ₹10 crore
+
+**Filing steps:**
+1. Draft complaint with invoices, chats, defect photos
+2. Pay nominal fee (₹100–₹750); e-filing available at e-daakhil.nic.in
+3. Attend mediation/hearing; seek refund, replacement, compensation or penalty under Section 39"""
+    )
+]
+
+DEFAULT_OFFLINE_RESPONSE = """**General Legal Guidance (India)**
+
+**Core rights and safety-nets:**
+- Article 14–18: Equality before law & protection from discrimination
+- Article 19–22: Freedom of speech, movement, profession with reasonable restrictions
+- Article 32: Direct access to Supreme Court for rights enforcement
+
+**If you face a legal issue:**
+1. Write down facts (date, time, people, evidence)
+2. Preserve digital proofs (emails, chats, bank SMS)
+3. File a police complaint / e‑FIR for cognizable cyber offences (1930 helpline & cybercrime.gov.in)
+4. Approach Legal Services Authority for free legal aid if income < prescribed slab
+
+**Helpful institutions:**
+- Supreme Court & respective High Court websites for cause-list/orders
+- District Legal Services Authority for Lok Adalat / mediation
+- Consumer Commissions, Family Courts, Cyber Police Stations"""
+
 
 def get_gemini_answer(question: str, language: str = 'en') -> str:
     """Get answer from Google Gemini via REST API"""
@@ -121,11 +318,7 @@ def get_gemini_answer(question: str, language: str = 'en') -> str:
         }
 
         # Use translated instruction based on the language
-        base_instruction = (
-            "You are a helpful legal AI for Indian law. Answer clearly and practically. "
-            "Always reference current Indian legal framework (BNS, BNSS, BSA instead of IPC, CrPC, Evidence Act). "
-            "Be cautious about providing definitive legal interpretations; when in doubt, recommend consulting a qualified lawyer."
-        )
+        base_instruction = "You are a helpful legal AI for Indian law. Answer clearly and practically. Always reference current Indian legal framework (BNS, BNSS, BSA instead of IPC, CrPC, Evidence Act). Cite specific laws and sections. If unsure, advise consulting a qualified lawyer."
         instruction = legal_advisor.translate_text(base_instruction, language)
 
         payload = {
@@ -143,12 +336,7 @@ def get_gemini_answer(question: str, language: str = 'en') -> str:
         last_error_text = None
         for model in model_candidates:
             api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-            try:
-                response = requests.post(api_url, headers=headers, json=payload, timeout=30)
-            except Exception as e:
-                last_error_text = str(e)
-                continue
-
+            response = requests.post(api_url, headers=headers, json=payload, timeout=30)
             if response.status_code == 200:
                 data = response.json()
                 try:
@@ -186,6 +374,9 @@ def get_gemini_answer(question: str, language: str = 'en') -> str:
             pass
         return legal_advisor.get_fallback_response(language)
 
+ 
+
+ 
 
 def get_fallback_legal_response(question: str) -> str:
     """Provide a fallback legal response when API is not available"""
@@ -195,76 +386,88 @@ def get_fallback_legal_response(question: str) -> str:
     if any(word in question_lower for word in ['tenant', 'rent', 'eviction', 'landlord']):
         return """As a tenant, you have several important rights under Indian law:
 
-1. Right to peaceful enjoyment: Your landlord cannot disturb your peaceful possession of the property.
-2. Right to notice: For eviction, landlords must provide proper notice as per state laws.
-3. Right to essential services: Landlords must maintain essential services like water, electricity.
-4. Right to privacy: Landlords cannot enter your premises without notice.
-5. Protection against arbitrary rent increases: Rent increases must follow legal procedures.
+1. **Right to peaceful enjoyment**: Your landlord cannot disturb your peaceful possession of the property.
+
+2. **Right to notice**: For eviction, landlords must provide proper notice as per state laws.
+
+3. **Right to essential services**: Landlords must maintain essential services like water, electricity.
+
+4. **Right to privacy**: Landlords cannot enter your premises without notice.
+
+5. **Protection against arbitrary rent increases**: Rent increases must follow legal procedures.
 
 Please note: Laws vary by state. For specific situations, consult a local lawyer."""
 
     elif any(word in question_lower for word in ['fir', 'police', 'complaint', 'crime']):
         return """For filing an FIR (First Information Report) in India:
 
-1. Go to the nearest police station where the incident occurred.
-2. Provide detailed information about the incident, including date, time, location, description, names of people involved, and any evidence or witnesses.
-3. Get acknowledgment: The police must give you a copy of the FIR.
-4. Follow up: Keep track of the investigation progress.
-5. Legal remedies: If police refuse to file FIR, you can approach the Superintendent of Police or file a complaint with the Magistrate.
+1. **Go to the nearest police station** where the incident occurred.
 
-Legal Framework: This process is governed by the Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023, which replaced the Code of Criminal Procedure (CrPC).
+2. **Provide detailed information** about the incident, including:
+   - Date, time, and location
+   - Description of what happened
+   - Names of people involved
+   - Any evidence or witnesses
 
-Remember: FIR is your right for cognizable offenses. Seek legal help if needed."""
+3. **Get acknowledgment**: The police must give you a copy of the FIR.
+
+4. **Follow up**: Keep track of the investigation progress.
+
+5. **Legal remedies**: If police refuse to file FIR, you can approach the Superintendent of Police or file a complaint with the Magistrate.
+
+**Legal Framework**: This process is governed by the Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023, which replaced the Code of Criminal Procedure (CrPC).
+
+Remember: FIR is your right for cognizable offenses. Don't hesitate to seek legal help if needed."""
 
     elif any(word in question_lower for word in ['divorce', 'marriage', 'custody', 'alimony']):
         return """For family law matters in India:
 
-Divorce Process:
-1. Grounds for divorce: Adultery, cruelty, desertion, conversion, mental disorder, etc.
-2. Mutual consent: Both parties can file for divorce by mutual consent.
-3. Court procedures: File petition in family court with proper documentation.
+**Divorce Process:**
+1. **Grounds for divorce**: Adultery, cruelty, desertion, conversion, mental disorder, etc.
+2. **Mutual consent**: Both parties can file for divorce by mutual consent.
+3. **Court procedures**: File petition in family court with proper documentation.
 
-Child Custody:
-1. Best interest of child: Courts prioritize child's welfare.
-2. Joint custody: Both parents can share custody.
-3. Visitation rights: Non-custodial parent has visitation rights.
+**Child Custody:**
+1. **Best interest of child**: Courts prioritize child's welfare.
+2. **Joint custody**: Both parents can share custody.
+3. **Visitation rights**: Non-custodial parent has visitation rights.
 
-Important: Family law is complex and varies by personal laws (Hindu, Muslim, Christian, etc.). Consult a family lawyer for specific advice."""
+**Important**: Family law is complex and varies by personal laws (Hindu, Muslim, Christian, etc.). Consult a family lawyer for specific advice."""
 
     elif any(word in question_lower for word in ['contract', 'agreement', 'breach', 'damages']):
         return """For contract-related issues in India:
 
-Essential Elements of a Valid Contract:
-1. Offer and acceptance
-2. Consideration (something of value)
-3. Competent parties
-4. Free consent
-5. Lawful object
+**Essential Elements of a Valid Contract:**
+1. **Offer and acceptance**
+2. **Consideration** (something of value)
+3. **Competent parties**
+4. **Free consent**
+5. **Lawful object**
 
-Breach of Contract Remedies:
-1. Specific performance: Court can order performance of contract
-2. Damages: Monetary compensation for losses
-3. Injunction: Court order to stop certain actions
-4. Rescission: Cancellation of contract
+**Breach of Contract Remedies:**
+1. **Specific performance**: Court can order performance of contract
+2. **Damages**: Monetary compensation for losses
+3. **Injunction**: Court order to stop certain actions
+4. **Rescission**: Cancellation of contract
 
-Important: Contract law is governed by the Indian Contract Act, 1872. For complex matters, consult a contract lawyer."""
+**Important**: Contract law is governed by the Indian Contract Act, 1872. For complex matters, consult a contract lawyer."""
 
     else:
         return """I understand you're seeking legal advice. Here's some general guidance:
 
-General Legal Rights in India:
-1. Right to legal aid: Free legal aid is available for those who cannot afford lawyers
-2. Right to fair trial: Everyone has the right to a fair and speedy trial
-3. Right to legal representation: You have the right to be represented by a lawyer
-4. Right to information: You can access public information under RTI Act
+**General Legal Rights in India:**
+1. **Right to legal aid**: Free legal aid is available for those who cannot afford lawyers
+2. **Right to fair trial**: Everyone has the right to a fair and speedy trial
+3. **Right to legal representation**: You have the right to be represented by a lawyer
+4. **Right to information**: You can access public information under RTI Act
 
-Important Disclaimer:
+**Important Disclaimer**: 
 - This is general information only
 - Laws vary by state and personal circumstances
 - Always consult a qualified lawyer for specific legal advice
 - For urgent matters, contact legal aid services immediately
 
-Emergency Contacts:
+**Emergency Contacts:**
 - Legal Aid: 1800-345-6789
 - Women Helpline: 181
 - Child Helpline: 1098"""
@@ -278,11 +481,19 @@ def get_legal_advice(question: str, language: str = 'en') -> str:
     try:
         # Try Gemini first with language-specific prompt
         gemini_answer = get_gemini_answer(question.strip(), language)
-        if gemini_answer and not gemini_answer.startswith("Gemini API key not set") and not gemini_answer.startswith("Error"):
+        fallback_signature = legal_advisor.get_fallback_response(language).strip().lower()
+        normalized_answer = (gemini_answer or '').strip()
+        lower_answer = normalized_answer.lower()
+        if (
+            normalized_answer
+            and not lower_answer.startswith("gemini api key not set")
+            and not lower_answer.startswith("error")
+            and lower_answer != fallback_signature
+        ):
             # If Gemini returns answer in English but we need another language, translate it
-            if language != 'en' and gemini_answer == legal_advisor.get_fallback_response('en'):
-                return legal_advisor.translate_text(gemini_answer, language)
-            return gemini_answer
+            if language != 'en' and normalized_answer == legal_advisor.get_fallback_response('en'):
+                return legal_advisor.translate_text(normalized_answer, language)
+            return normalized_answer
 
         # Fallback to intelligent response
         return get_intelligent_legal_response(question, language)
@@ -292,152 +503,22 @@ def get_legal_advice(question: str, language: str = 'en') -> str:
         return get_intelligent_legal_response(question, language)
 
 def get_intelligent_legal_response(question: str, language: str = 'en') -> str:
-    """Provide intelligent legal responses based on question analysis"""
-    question_lower = question.lower()
-    
-    # Multilingual keyword matching for tenant/rent issues
-    tenant_keywords = [
-        'tenant', 'rent', 'eviction', 'landlord', 'lease', 'rental',
-        'किरायेदार', 'किराया', 'बेदखली', 'मकान मालिक',
-        'ভাড়াটিয়া', 'ভাড়া', 'উচ্ছেদ', 'বাড়িওয়ালা',
-        'வாடகை', 'வாடகைதாரர்',
-        'అద్దె', 'అద్దెదారుడు',
-        'भाडेकरू', 'भाडे',
-    ]
-    
-    fir_keywords = [
-        'fir', 'police', 'complaint', 'crime', 'criminal', 'arrest', 'bail', 'court',
-        'एफआईआर', 'पुलिस', 'शिकायत', 'अपराध', 'गिरफ्तार', 'जमानत',
-        'এফআইআর', 'পুলিশ', 'অভিযোগ',
-        'எஃப்ஐஆர்', 'காவல்துறை',
-    ]
-    
-    family_keywords = [
-        'divorce', 'marriage', 'custody', 'alimony', 'maintenance', 'family', 'spouse', 'child',
-        'तलाक', 'विवाह', 'संरक्षण', 'गुजारा भत्ता',
-        'তালাক', 'বিবাহ', 'অভিভাবকত্ব',
-        'விவாகரத்து', 'திருமணம்',
-    ]
-    
-    contract_keywords = [
-        'contract', 'agreement', 'breach', 'damages', 'employment', 'job', 'work', 'salary',
-        'अनुबंध', 'समझौता', 'उल्लंघन',
-        'চুক্তি', 'লঙ্ঘন',
-        'ஒப்பந்தம்', 'மீறல்',
-    ]
-    
-    consumer_keywords = [
-        'consumer', 'refund', 'defective', 'warranty', 'complaint', 'product', 'service', 'purchase',
-        'उपभोक्ता', 'वापसी', 'दोषपूर्ण', 'वारंटी',
-        'ভোক্তা', 'ফেরত', 'ত্রুটিপূর্ণ',
-        'நுகர்வோர்', 'திரும்ப',
-    ]
+    """Provide intelligent legal responses using curated templates."""
+    question_lower = (question or '').lower()
 
-    # Check categories in order of specificity
-    if any(word in question_lower for word in tenant_keywords):
-        response = """Tenant Rights in India - Comprehensive Guide
+    response = None
+    for keywords, template in OFFLINE_RESPONSE_TEMPLATES:
+        if any(word in question_lower for word in keywords):
+            response = template
+            break
 
-Key Rights You Have:
-1. Right to Peaceful Enjoyment: Your landlord cannot disturb your peaceful possession without proper notice.
-2. Right to Essential Services: Landlords must maintain water, electricity, and other essential services.
-3. Right to Privacy: Landlords should not enter your premises without notice.
-4. Protection from Arbitrary Eviction: Eviction requires proper legal notice and valid grounds.
-5. Right to Fair Rent: Rent increases must follow legal procedures.
+    if response is None:
+        response = DEFAULT_OFFLINE_RESPONSE
 
-Important Laws:
-- Rent Control Acts (vary by state)
-- Transfer of Property Act, 1882
-- Model Tenancy Act, 2021 (if adopted by your state)
-
-What to Do if Your Rights are Violated:
-1. Document everything (photos, videos, written communications).
-2. Send a legal notice to your landlord.
-3. File a complaint with the Rent Control Court or appropriate forum.
-4. Contact local legal aid services."""
-
-    elif any(word in question_lower for word in fir_keywords):
-        response = """Filing FIR and Criminal Law in India
-
-How to File an FIR:
-1. Go to the nearest police station where the incident occurred.
-2. Provide complete details: date, time, location, description of incident, names of people involved, and any evidence or witnesses.
-3. Get acknowledgment: Police must give you a copy of the FIR.
-4. Follow up: Keep track of investigation progress.
-
-Your Rights During FIR Process:
-- Right to get a copy of FIR free of cost
-- Right to legal representation
-- Right to approach higher authorities or a magistrate if police refuse to file FIR
-
-Important Laws:
-- Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023
-- Bharatiya Nyaya Sanhita (BNS), 2023"""
-
-    elif any(word in question_lower for word in family_keywords):
-        response = """Family Law in India - Marriage, Divorce & Custody
-
-Divorce Process:
-1. Grounds for divorce include adultery, cruelty, desertion, conversion, mental disorder, and mutual consent.
-2. File petition in Family Court or appropriate civil court.
-3. Mediation and counseling may be required.
-
-Child Custody:
-- Best interest of the child is the primary consideration.
-- Courts may grant joint or sole custody depending on circumstances.
-- Visitation rights can be ordered for the non-custodial parent.
-
-Maintenance/Alimony:
-- Maintenance depends on income, needs and other factors.
-- Interim maintenance can be sought during proceedings."""
-
-    elif any(word in question_lower for word in contract_keywords):
-        response = """Contract Law in India
-
-Essential Elements of a Valid Contract:
-1. Offer and Acceptance
-2. Consideration
-3. Competent Parties
-4. Free Consent
-5. Lawful Object
-
-Remedies for Breach:
-- Specific performance, damages, injunction, rescission.
-
-Important Laws:
-- Indian Contract Act, 1872
-- Sale of Goods Act, 1930"""
-
-    elif any(word in question_lower for word in consumer_keywords):
-        response = """Consumer Rights in India
-
-Your Rights:
-1. Right to Safety
-2. Right to Information
-3. Right to Choose
-4. Right to be Heard
-5. Right to Redressal
-
-How to Seek Redressal:
-- File complaint at District, State, or National Consumer Forum depending on value of claim.
-- Keep all receipts and documents and file within statutory limitation (usually 2 years)."""
-
-    else:
-        response = """General Legal Guidance for India
-
-Fundamental Rights and Resources:
-- Right to equality, freedom, constitutional remedies.
-- Free legal aid through Legal Services Authorities.
-- District, State and National courts and consumer/family forums.
-
-Disclaimer:
-This is general information only. Laws vary by state and circumstances. Consult a qualified lawyer for specific legal advice."""
-
-    # Translate if needed
     if language != 'en':
         try:
-            translated_response = legal_advisor.translate_text(response, language)
-            return translated_response
+            return legal_advisor.translate_text(response, language)
         except Exception:
             return response
-    
     return response
+
