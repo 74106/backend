@@ -3,11 +3,10 @@
 
 # Runtime / backend
 Flask==3.1.2
-waitress==3.0.0
 Flask-CORS==6.0.1
 python-dotenv==1.1.1
 requests==2.32.5
-google-genai
+openai>=1.0.0
 PyJWT==2.10.1
 passlib==1.7.4
 reportlab==4.4.4
@@ -29,5 +28,4 @@ flake8==6.0.0
 # Notes:
 # - If you deploy to production, prefer installing only the runtime set (remove dev entries) or
 #   use a virtualenv per service (backend, backend-2) and install their specific requirement files.
-# - Gemini API uses REST via requests; set GEMINI_API_KEY environment variable
-
+# - OpenAI API uses REST via requests; set OPENAI_API_KEY environment variable
