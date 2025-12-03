@@ -14,9 +14,11 @@ from utils.db import (
     fetch_forms_filtered,
     create_user,
     get_user_by_email,
-    upsert_lawyer_profile,
     list_lawyer_profiles,
     insert_lawyer_booking,
+    create_subscription_purchase,
+    get_subscription_purchase,
+    get_user_subscriptions,
 )
 import logging
 import os
@@ -277,7 +279,6 @@ def _public_lawyer_payload(profile: dict) -> dict:
         'communication_modes': communication,
         'consultation_modes': consultation_modes or communication,
         'hourly_rate': profile.get('hourly_rate'),
-        'portal_source': profile.get('portal_source') or 'lawyersverge.netlify.app',
         'photo_url': profile.get('photo_url'),
         'video_link': profile.get('video_link'),
         'updated_at': profile.get('updated_at'),
@@ -795,7 +796,7 @@ def lawyers_availability():
             'payment': {
                 'upi_handle': LAWYER_UPI_HANDLE,
                 'requires_pre_payment': True,
-                'note': 'Pay the plan amount first, keep the UPI reference handy before selecting a lawyer.'
+                'note': 'Purchase a subscription tier first using /subscriptions/purchase, then use the subscription_id to book a lawyer.'
             }
         })
     except Exception as e:
@@ -803,63 +804,26 @@ def lawyers_availability():
         return jsonify({'error': 'Internal server error'}), 500
 
 
-@app.route('/lawyers/profiles', methods=['GET', 'POST'])
+@app.route('/lawyers/profiles', methods=['GET'])
 def lawyers_profiles():
     try:
-        if request.method == 'GET':
-            email_filter = (request.args.get('email') or '').strip().lower()
-            only_available = request.args.get('available') == '1'
-            try:
-                limit = int(request.args.get('limit')) if request.args.get('limit') else None
-            except Exception:
-                limit = None
-            profiles = list_lawyer_profiles(only_available=only_available, limit=limit)
-            if email_filter:
-                profiles = [p for p in profiles if (p.get('email') or '').lower() == email_filter]
-            public = [_public_lawyer_payload(p) for p in profiles]
-            return jsonify({
-                'lawyers': public,
-                'count': len(public),
-                'tiers': get_consultation_tiers(),
-                'payment': {'upi_handle': LAWYER_UPI_HANDLE, 'requires_pre_payment': True},
-                'timestamp': get_current_timestamp()
-            }), 200
-
-        # POST (portal publishing)
-        if not _portal_request_authorized():
-            return jsonify({'error': 'Forbidden'}), 403
-
-        data = request.get_json() or {}
-        required = ['full_name', 'specialization', 'bio']
-        missing = [field for field in required if not (data.get(field) or '').strip()]
-        if missing:
-            return jsonify({'error': f"Missing fields: {', '.join(missing)}"}), 400
-
-        normalized = {
-            'full_name': data.get('full_name'),
-            'specialization': data.get('specialization'),
-            'experience_years': data.get('experience_years'),
-            'qualification': data.get('qualification'),
-            'bio': data.get('bio'),
-            'languages': data.get('languages'),
-            'phone': data.get('phone'),
-            'email': data.get('email'),
-            'hourly_rate': data.get('hourly_rate'),
-            'location': data.get('location'),
-            'availability': data.get('availability') or data.get('available_slots'),
-            'communication_modes': data.get('communication') or data.get('communication_modes'),
-            'consultation_modes': data.get('consultation_modes'),
-            'status': data.get('status'),
-            'is_available': data.get('is_available', True),
-            'rating': data.get('rating'),
-            'cases_handled': data.get('cases_handled'),
-            'portal_source': data.get('portal_source') or 'lawyersverge.netlify.app',
-            'photo_url': data.get('photo_url'),
-            'video_link': data.get('video_link'),
-        }
-        saved = upsert_lawyer_profile(normalized)
-        public = _public_lawyer_payload(saved)
-        return jsonify({'message': 'Profile published', 'lawyer': public}), 201
+        email_filter = (request.args.get('email') or '').strip().lower()
+        only_available = request.args.get('available') == '1'
+        try:
+            limit = int(request.args.get('limit')) if request.args.get('limit') else None
+        except Exception:
+            limit = None
+        profiles = list_lawyer_profiles(only_available=only_available, limit=limit)
+        if email_filter:
+            profiles = [p for p in profiles if (p.get('email') or '').lower() == email_filter]
+        public = [_public_lawyer_payload(p) for p in profiles]
+        return jsonify({
+            'lawyers': public,
+            'count': len(public),
+            'tiers': get_consultation_tiers(),
+            'payment': {'upi_handle': LAWYER_UPI_HANDLE, 'requires_pre_payment': True},
+            'timestamp': get_current_timestamp()
+        }), 200
     except Exception as e:
         logger.error(f"Error in lawyers_profiles: {e}")
         return jsonify({'error': 'Internal server error'}), 500
@@ -874,12 +838,78 @@ def get_subscription_tiers():
             'payment': {
                 'requires_pre_payment': True,
                 'upi_handle': LAWYER_UPI_HANDLE,
-                'note': 'Send the plan amount via UPI before choosing a lawyer, then share the transaction reference.'
+                'note': 'Purchase a subscription tier first, then use the subscription_id to book a lawyer.'
             }
         }), 200
         
     except Exception as e:
         logger.error(f"Error in get_subscription_tiers: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/subscriptions/purchase', methods=['POST'])
+def purchase_subscription():
+    """Purchase a subscription tier. User pays first, then gets a subscription_id to book lawyers."""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': 'Unauthorized'}), 401
+        
+        data = request.get_json() or {}
+        tier_id = (data.get('tier_id') or '').strip().lower()
+        payment_reference = (data.get('payment_reference') or '').strip()
+        
+        if not tier_id:
+            return jsonify({'error': 'tier_id is required'}), 400
+        
+        if not payment_reference:
+            return jsonify({'error': 'payment_reference is required. Please provide your UPI transaction reference.'}), 400
+        
+        # Validate tier
+        tiers = {t['id']: t for t in get_consultation_tiers()}
+        tier = tiers.get(tier_id)
+        if not tier:
+            return jsonify({'error': 'Invalid subscription tier'}), 400
+        
+        # Create subscription purchase
+        subscription = create_subscription_purchase({
+            'user_id': user['user_id'],
+            'tier_id': tier_id,
+            'tier_name': tier['name'],
+            'price': tier['price'],
+            'payment_reference': payment_reference,
+            'status': 'active'
+        })
+        
+        return jsonify({
+            'message': 'Subscription purchased successfully',
+            'subscription': subscription,
+            'tier': tier,
+            'next_steps': [
+                'Use the subscription_id to book a lawyer consultation',
+                'Your subscription is active and ready to use'
+            ]
+        }), 201
+        
+    except Exception as e:
+        logger.error(f"Error in purchase_subscription: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/subscriptions/my', methods=['GET'])
+def get_my_subscriptions():
+    """Get current user's active subscriptions."""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': 'Unauthorized'}), 401
+        
+        subscriptions = get_user_subscriptions(user['user_id'])
+        return jsonify({
+            'subscriptions': subscriptions,
+            'count': len(subscriptions)
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error in get_my_subscriptions: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/book-lawyer', methods=['POST'])
@@ -1206,15 +1236,31 @@ def health_check():
 
 
 def _handle_lawyer_booking(user: dict, payload: dict) -> tuple[dict, int]:
+    subscription_id_raw = payload.get('subscription_id')
+    if not subscription_id_raw:
+        return {'error': 'subscription_id is required. Please purchase a subscription tier first using /subscriptions/purchase'}, 400
+    
+    try:
+        subscription_id = int(subscription_id_raw)
+    except Exception:
+        return {'error': 'Invalid subscription_id format'}, 400
+    
+    # Verify subscription belongs to user and is active
+    subscription = get_subscription_purchase(subscription_id)
+    if not subscription:
+        return {'error': 'Subscription not found'}, 404
+    
+    if subscription['user_id'] != user['user_id']:
+        return {'error': 'Unauthorized: This subscription does not belong to you'}, 403
+    
+    if subscription['status'] != 'active':
+        return {'error': f'Subscription is not active. Current status: {subscription["status"]}'}, 400
+    
+    tier_id = subscription['tier_id']
     tiers = {t['id']: t for t in get_consultation_tiers()}
-    tier_id = (payload.get('tier_id') or payload.get('tier') or '').strip().lower()
     tier = tiers.get(tier_id)
     if not tier:
         return {'error': 'Invalid subscription tier'}, 400
-
-    payment_reference = (payload.get('payment_reference') or '').strip()
-    if not payment_reference:
-        return {'error': 'Payment reference is required to verify your booking'}, 400
 
     customer_name = (payload.get('customer_name') or '').strip()
     customer_phone = (payload.get('customer_phone') or '').strip()
@@ -1239,9 +1285,10 @@ def _handle_lawyer_booking(user: dict, payload: dict) -> tuple[dict, int]:
         'customer_phone': customer_phone,
         'customer_email': user.get('email'),
         'issue_description': issue_description,
-        'payment_reference': payment_reference,
+        'payment_reference': subscription['payment_reference'],
         'status': 'awaiting_match' if not preferred_lawyer_id else 'pending_confirmation',
         'notes': payload.get('notes'),
+        'subscription_id': subscription_id,
     })
 
     shortlist = list_lawyer_profiles(only_available=True, limit=3)
@@ -1249,18 +1296,13 @@ def _handle_lawyer_booking(user: dict, payload: dict) -> tuple[dict, int]:
         'message': 'Lawyer consultation booked successfully',
         'booking': record,
         'tier': tier,
-        'requires_pre_payment': True,
-        'payment': {
-            'upi_handle': LAWYER_UPI_HANDLE,
-            'provided_reference': payment_reference,
-            'note': 'Keep this UPI/transaction reference handy; our coordinator will verify it before connecting you.'
-        },
+        'subscription_id': subscription_id,
         'preferred_lawyer_id': preferred_lawyer_id,
         'available_lawyers': [_public_lawyer_payload(p) for p in shortlist],
         'next_steps': [
-            'A coordinator will verify your payment reference within 30 minutes.',
+            'Your booking has been confirmed using your active subscription.',
             'You will receive a call / WhatsApp message to confirm the preferred communication mode.',
-            'Once verified, the selected lawyer will join you via chat/voice/video as per the chosen plan.'
+            'The selected lawyer will join you via chat/voice/video as per the chosen plan.'
         ]
     }
     return response, 200
