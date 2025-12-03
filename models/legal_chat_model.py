@@ -294,82 +294,138 @@ DEFAULT_OFFLINE_RESPONSE = """**General Legal Guidance (India)**
 - Consumer Commissions, Family Courts, Cyber Police Stations"""
 
 
-def get_gemini_answer(question: str, language: str = 'en') -> str:
-    """Get answer from Google Gemini via REST API"""
+def get_openai_answer(question: str, language: str = 'en', previous_cases: list[dict] = None) -> str:
+    """Get answer from OpenAI API with context from previous cases"""
     try:
-        api_key = os.environ.get('GEMINI_API_KEY')
+        api_key = os.environ.get('OPENAI_API_KEY')
         if not api_key:
-            return "Gemini API key not set. Set GEMINI_API_KEY environment variable."
+            return "OpenAI API key not set. Set OPENAI_API_KEY environment variable."
 
-        # Endpoint and model selection (use v1beta and Gemini 3.x models)
-        primary_model = os.environ.get('GEMINI_MODEL', 'gemini-3.0-flash')
-        model_candidates = [
-            primary_model,
-            'gemini-3.0-flash',
-            'gemini-3.0-pro',
-            'gemini-2.5-flash-exp',
-            'gemini-2.0-flash-exp',
-        ]
+        # Fetch similar previous cases if not provided
+        if previous_cases is None:
+            try:
+                from utils.db import fetch_chats_filtered
+                from app import _tokenize, _jaccard
+                
+                # Fetch recent chats
+                rows = fetch_chats_filtered() or []
+                q_tokens = _tokenize(question)
+                scored = []
+                
+                for r in rows[:200]:  # Check last 200 cases
+                    try:
+                        rq = (r.get('question') or '')
+                        ra = (r.get('answer') or '')
+                        score_q = _jaccard(q_tokens, _tokenize(rq))
+                        score_a = _jaccard(q_tokens, _tokenize(ra)) * 0.5
+                        score = score_q + score_a
+                        if score > 0:
+                            scored.append({
+                                'question': rq,
+                                'answer': ra,
+                                'timestamp': r.get('timestamp'),
+                                'score': score
+                            })
+                    except Exception:
+                        continue
+                
+                # Sort by score and take top 5
+                scored.sort(key=lambda x: (-x['score'], x.get('timestamp') or ''))
+                previous_cases = scored[:5]
+            except Exception as e:
+                try:
+                    from app import logger
+                    logger.warning(f"Failed to fetch previous cases: {e}")
+                except Exception:
+                    pass
+                previous_cases = []
 
+        # Build context from previous cases
+        cases_context = ""
+        if previous_cases:
+            cases_context = "\n\n**Relevant Previous Cases and Their Results:**\n"
+            for idx, case in enumerate(previous_cases, 1):
+                cases_context += f"\nCase {idx}:\n"
+                cases_context += f"Question: {case.get('question', 'N/A')}\n"
+                cases_context += f"Answer/Result: {case.get('answer', 'N/A')}\n"
+                if case.get('timestamp'):
+                    cases_context += f"Date: {case.get('timestamp')}\n"
+            cases_context += "\nPlease reference these previous cases when answering the user's question, especially if they ask about similar situations or outcomes.\n"
+
+        # Get legal prompt
         legal_prompt = legal_advisor.get_legal_prompt(question, language)
 
-        headers = {
-            "Content-Type": "application/json",
-        }
-
         # Use translated instruction based on the language
-        base_instruction = "You are a helpful legal AI for Indian law. Answer clearly and practically. Always reference current Indian legal framework (BNS, BNSS, BSA instead of IPC, CrPC, Evidence Act). Cite specific laws and sections. If unsure, advise consulting a qualified lawyer."
+        base_instruction = """You are a helpful legal AI for Indian law. Answer clearly and practically. Always reference current Indian legal framework (BNS, BNSS, BSA instead of IPC, CrPC, Evidence Act). Cite specific laws and sections. If unsure, advise consulting a qualified lawyer.
+
+When answering questions, you have access to previous cases and their results. Use this information to:
+1. Reference similar cases and their outcomes
+2. Provide context about how similar situations were handled
+3. Explain patterns or precedents from previous cases
+4. Help users understand what to expect based on similar cases
+
+Always prioritize accuracy and cite specific laws and sections."""
+        
         instruction = legal_advisor.translate_text(base_instruction, language)
 
-        payload = {
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [
-                        {"text": instruction},
-                        {"text": legal_prompt}
-                    ]
-                }
-            ]
+        # Combine instruction, cases context, and legal prompt
+        full_prompt = instruction + cases_context + "\n\n" + legal_prompt
+
+        # OpenAI API call
+        model = os.environ.get('OPENAI_MODEL', 'gpt-4o-mini')
+        api_url = "https://api.openai.com/v1/chat/completions"
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
         }
 
-        last_error_text = None
-        for model in model_candidates:
-            api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-            response = requests.post(api_url, headers=headers, json=payload, timeout=30)
-            if response.status_code == 200:
-                data = response.json()
-                try:
-                    candidates = data.get("candidates") or []
-                    if not candidates:
-                        continue
-                    parts = candidates[0].get("content", {}).get("parts", [])
-                    if not parts:
-                        continue
-                    text = (parts[0].get("text") or "").strip()
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": instruction
+                },
+                {
+                    "role": "user",
+                    "content": full_prompt
+                }
+            ],
+            "temperature": 0.7,
+            "max_tokens": 2000
+        }
+
+        response = requests.post(api_url, headers=headers, json=payload, timeout=30)
+        
+        if response.status_code == 200:
+            data = response.json()
+            try:
+                choices = data.get("choices", [])
+                if choices and len(choices) > 0:
+                    text = choices[0].get("message", {}).get("content", "").strip()
                     if text:
                         return text
-                    # if text empty, try next model
-                    continue
+            except Exception as e:
+                try:
+                    from app import logger
+                    logger.error(f"Error parsing OpenAI response: {e}")
                 except Exception:
-                    continue
-            else:
-                last_error_text = f"{response.status_code}: {response.text}"
-                # try next model
-                continue
+                    pass
+        else:
+            error_text = f"{response.status_code}: {response.text}"
+            try:
+                from app import logger
+                logger.error(f"OpenAI API error: {error_text}")
+            except Exception:
+                pass
 
-        # If all models failed
-        try:
-            from app import logger
-            logger.error(f"Gemini API failed for all candidate models. Last error: {last_error_text}")
-        except Exception:
-            pass
         return legal_advisor.get_fallback_response(language)
 
     except Exception as e:
         try:
             from app import logger
-            logger.error(f"Gemini API error: {str(e)}")
+            logger.error(f"OpenAI API error: {str(e)}")
         except Exception:
             pass
         return legal_advisor.get_fallback_response(language)
@@ -472,25 +528,25 @@ Remember: FIR is your right for cognizable offenses. Don't hesitate to seek lega
 - Women Helpline: 181
 - Child Helpline: 1098"""
 
-def get_legal_advice(question: str, language: str = 'en') -> str:
-    """Main function to get legal advice using Gemini first, then fallback"""
+def get_legal_advice(question: str, language: str = 'en', previous_cases: list[dict] = None) -> str:
+    """Main function to get legal advice using OpenAI first, then fallback"""
     if not question or not question.strip():
         base_message = "Could you please provide a question that addresses a specific legal issue."
         return legal_advisor.translate_text(base_message, language)
     
     try:
-        # Try Gemini first with language-specific prompt
-        gemini_answer = get_gemini_answer(question.strip(), language)
+        # Try OpenAI first with language-specific prompt and previous cases context
+        openai_answer = get_openai_answer(question.strip(), language, previous_cases)
         fallback_signature = legal_advisor.get_fallback_response(language).strip().lower()
-        normalized_answer = (gemini_answer or '').strip()
+        normalized_answer = (openai_answer or '').strip()
         lower_answer = normalized_answer.lower()
         if (
             normalized_answer
-            and not lower_answer.startswith("gemini api key not set")
+            and not lower_answer.startswith("openai api key not set")
             and not lower_answer.startswith("error")
             and lower_answer != fallback_signature
         ):
-            # If Gemini returns answer in English but we need another language, translate it
+            # If OpenAI returns answer in English but we need another language, translate it
             if language != 'en' and normalized_answer == legal_advisor.get_fallback_response('en'):
                 return legal_advisor.translate_text(normalized_answer, language)
             return normalized_answer
