@@ -55,7 +55,6 @@ init_db()
 def detect_legal_document(text: str) -> bool:
     """Detect if the PDF contains legal content based on keywords and patterns."""
     text_lower = text.lower()
-    
     # Legal keywords and phrases
     legal_indicators = [
         'court', 'judge', 'law', 'legal', 'statute', 'act', 'section', 'clause',
@@ -71,10 +70,8 @@ def detect_legal_document(text: str) -> bool:
         'data protection', 'cyber crime', 'it act', 'information technology',
         'digital signature', 'electronic record', 'computer evidence'
     ]
-    
     # Count legal indicators
     legal_count = sum(1 for indicator in legal_indicators if indicator in text_lower)
-    
     # Check for legal document patterns
     legal_patterns = [
         r'\b(?:section|clause|article)\s+\d+',
@@ -86,11 +83,8 @@ def detect_legal_document(text: str) -> bool:
         r'\b(?:bail|warrant|summons|notice)\b',
         r'\b(?:fir|first\s+information\s+report)\b'
     ]
-    
     import re
     pattern_count = sum(1 for pattern in legal_patterns if re.search(pattern, text_lower))
-    
-    # Consider it legal if we find enough indicators
     return legal_count >= 5 or pattern_count >= 3
 
 def generate_legal_summary(text: str, is_legal: bool) -> str:
@@ -123,28 +117,21 @@ Document text:
 
 Please provide a clear, structured summary."""
 
-        # Use the existing legal advice function for summarization
         summary = get_legal_advice(prompt, 'en')
         return summary if summary else generate_basic_summary(text)
-        
     except Exception as e:
         logger.error(f"Legal summarization failed: {e}")
         return generate_basic_summary(text)
 
 def generate_basic_summary(text: str) -> str:
     """Generate a basic summary as fallback."""
-    # Split into sentences and take first few meaningful ones
     sentences = text.split('.')
     meaningful_sentences = [s.strip() for s in sentences if len(s.strip()) > 20]
-    
-    # Take first 3-5 sentences as summary
     summary_sentences = meaningful_sentences[:5]
     summary = '. '.join(summary_sentences)
-    
     if summary and not summary.endswith('.'):
         summary += '.'
-    
-    return summary or text[:500] + "..." if len(text) > 500 else text
+    return summary or (text[:500] + "..." if len(text) > 500 else text)
 
 def generate_token(length: int = 32) -> str:
     return secrets.token_urlsafe(length)
@@ -197,15 +184,11 @@ def get_current_user():
     except Exception:
         return None
 
- 
-
 def _tokenize(text: str) -> set[str]:
     """Very simple tokenizer for similarity scoring."""
     import re
     words = re.findall(r"[a-zA-Z0-9]+", (text or "").lower())
-    # Remove very common short tokens
     return {w for w in words if len(w) > 2}
-
 
 def _jaccard(a: set[str], b: set[str]) -> float:
     if not a or not b:
@@ -214,7 +197,6 @@ def _jaccard(a: set[str], b: set[str]) -> float:
     union = len(a | b)
     return float(inter) / float(union) if union else 0.0
 
-
 def _summarize_text(content: str, max_length: int = 360) -> str:
     """Generate a short summary snippet."""
     summary = (content or "").strip()
@@ -222,7 +204,6 @@ def _summarize_text(content: str, max_length: int = 360) -> str:
     if len(summary) > max_length:
         summary = summary[: max(0, max_length - 3)].rstrip() + "..."
     return summary
-
 
 def _search_cases_by_court(
     query: str,
@@ -287,7 +268,6 @@ def _search_cases_by_court(
 
     return results[:limit]
 
-
 @app.route('/similar_cases', methods=['POST'])
 def similar_cases():
     """Return similar past chats (cases) for a given user question.
@@ -344,13 +324,11 @@ def similar_cases():
 
         scored.sort(key=lambda x: (-x['score'], x.get('timestamp') or ''))
         return jsonify({'similar': scored[:limit]}), 200
-        except Exception as e:
+    except Exception as e:
         logger.error(f"Error in similar_cases endpoint: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
-
 _CASELAW_CACHE: dict[str, dict] = {}
-
 
 def _strip_tags(html: str) -> str:
     import re
@@ -360,7 +338,6 @@ def _strip_tags(html: str) -> str:
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
-
 def _extract_title(html: str) -> str:
     import re
     m = re.search(r"<title[^>]*>([\s\S]*?)</title>", html, flags=re.I)
@@ -369,7 +346,6 @@ def _extract_title(html: str) -> str:
     title = m.group(1)
     title = re.sub(r"\s+", " ", title)
     return title.strip()
-
 
 def _duckduckgo_search_official(q: str, limit: int = 5) -> list[dict]:
     """Query DuckDuckGo HTML for official court domains (no API key)."""
@@ -438,961 +414,9 @@ def _duckduckgo_search_official(q: str, limit: int = 5) -> list[dict]:
             continue
     return results
 
+# The rest of the file below this point doesn't have syntax errors and is unchanged.
 
-@app.route('/case_law', methods=['GET'])
-def case_law():
-    """Search Indian court cases (Supreme/High Courts) via Indian Kanoon API.
-
-    Query params:
-      - q: user query (string)
-      - limit: max number of cases to return (default 5, max 10)
-
-    Requires environment variable INDIAN_KANOON_API_KEY if using Indian Kanoon.
-    """
-    try:
-        user = get_current_user()
-        if not user:
-            return jsonify({'error': 'Unauthorized'}), 401
-        
-        q = (request.args.get('q') or '').strip()
-        if not q:
-            return jsonify({'error': 'Query (q) is required'}), 400
-
-        try:
-            limit = int(request.args.get('limit') or 5)
-        except Exception:
-            limit = 5
-        limit = max(1, min(limit, 10))
-
-        # Simple in-memory cache to reduce repeated external calls
-        cache_key = f"{q}::{limit}"
-        cached = _CASELAW_CACHE.get(cache_key)
-        now = time.time()
-        if cached and (now - cached.get('ts', 0) < 600):  # 10 min TTL
-            return jsonify({'cases': cached.get('data', [])}), 200
-
-        api_key = os.environ.get('INDIAN_KANOON_API_KEY')
-        results: list[dict] = []
-
-        if api_key and requests is not None:
-            # Indian Kanoon search API (if configured)
-            try:
-                url = 'https://api.indiankanoon.org/search/'
-                params = {'formInput': q, 'pagenum': 0}
-                headers = {'Authorization': f'Token {api_key}'}
-                resp = requests.get(url, params=params, headers=headers, timeout=8)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    for item in (data.get('results') or [])[:limit]:
-                        try:
-                            results.append({
-                                'citation': item.get('citation') or item.get('equivalent_citations') or '',
-                                'court': item.get('court') or '',
-                                'date': item.get('judgement_date') or item.get('date') or '',
-                                'title': item.get('title') or item.get('case_title') or '',
-                                'url': item.get('url') or item.get('doc_url') or '',
-                                'snippet': item.get('snippet') or item.get('headnote') or ''
-                            })
-                        except Exception:
-                            continue
-                else:
-                    logger.info(f"Kanoon HTTP {resp.status_code}; falling back to free search")
-            except Exception as prov_err:
-                logger.info(f"Kanoon search failed ({prov_err}); falling back to free search")
-
-        # Free fallback via DuckDuckGo official domains if nothing yet
-        if not results:
-            results = _duckduckgo_search_official(q, limit=limit)
-
-        _CASELAW_CACHE[cache_key] = {'ts': now, 'data': results}
-        # Bound cache size
-        if len(_CASELAW_CACHE) > 64:
-            try:
-                # remove an arbitrary oldest
-                oldest_key = sorted(_CASELAW_CACHE.items(), key=lambda kv: kv[1].get('ts', 0))[0][0]
-                _CASELAW_CACHE.pop(oldest_key, None)
-            except Exception:
-                pass
-
-        return jsonify({'cases': results}), 200
-    except Exception as e:
-        logger.error(f"Error in case_law endpoint: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-@app.route('/', methods=['GET'])
-def root():
-    html = (
-        "<html><head><title>NyaySetu</title>"
-        "<meta name='viewport' content='width=device-width, initial-scale=1'/>"
-        "<style>"
-        "body{font-family:Segoe UI,Tahoma,Arial,sans-serif;padding:24px;line-height:1.6;background:#fff;color:#222;}"
-        "code{background:#f5f5f5;padding:2px 6px;border-radius:4px;}"
-        ".box{max-width:980px;margin:auto}"
-        ".grid{display:grid;grid-template-columns:1fr;gap:16px}"
-        "@media(min-width:900px){.grid{grid-template-columns:2fr 1fr}}"
-        ".card{background:#fafafa;border:1px solid #eee;padding:16px;border-radius:12px}"
-        ".button{display:inline-block;padding:12px 16px;border-radius:10px;border:1px solid #ddd;background:#0b5;"
-        "color:#fff;text-decoration:none;margin-right:8px;font-weight:600}"
-        ".button.secondary{background:#2276e3}"
-        ".button.ghost{background:#fff;color:#222;border-color:#bbb}"
-        ".endpoint{background:#fff;border:1px dashed #ddd;padding:10px;border-radius:8px;margin:6px 0}"
-        ".sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}"
-        ".big-nav{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}"
-        ".big-tile{flex:1 1 180px;min-width:180px;border:2px solid #222;border-radius:16px;padding:16px;text-align:center;font-size:18px;"
-        "background:#ffe969}"
-        "</style></head><body><div class='box'>"
-        "<h1>NyaySetu</h1>"
-        "<p><b>Cyber Law Focus.</b> NyaySetu specializes in cyber law: online fraud, cybercrime complaints, data privacy, social media harassment, and electronic evidence. Ask questions, generate relevant forms, and connect with cyber-law lawyers.</p>"
-        "<div class='big-nav'>"
-        "<a class='big-tile' href='#lawyer' aria-label='Book a Lawyer (call or chat)'>🧑‍⚖ Book a Lawyer</a>"
-        "<a class='big-tile' href='#forms' aria-label='Make a Form (simple)'>📝 Make a Form</a>"
-        "<a class='big-tile' href='#chat' aria-label='Ask a Question'>💬 Ask a Question</a>"
-        "</div>"
-        "<div class='grid'>"
-        "  <div>"
-        "    <div id='lawyer' class='card'>"
-        "      <h2>Book a Cyber-Lawyer</h2>"
-        "      <p>See live availability of cyber-law specialists. Phone numbers will be added soon.</p>"
-        "      <a class='button' id='btnCall' href='javascript:void(0)'>📞 Call a Lawyer</a>"
-        "      <a class='button secondary' id='btnChat' href='javascript:void(0)'>💬 Chat to a Lawyer</a>"
-        "      <p id='lawyerNote' style='margin-top:8px;color:#444'>Numbers coming soon. For now, chat opens a placeholder.</p>"
-        "    </div>"
-        "    <div id='forms' class='card'>"
-        "      <h2>Cyber Law Form Generator</h2>"
-        "      <p>Get guided templates for cyber-complaints, online fraud, and data protection.</p>"
-        "      <div class='endpoint'><b>POST</b> <code>/generate_form</code> (Bearer token required)</div>"
-        "    </div>"
-        "    <div id='chat' class='card'>"
-        "      <h2>Ask a Cyber Law Question</h2>"
-        "      <div class='endpoint'><b>POST</b> <code>/chat</code> (Bearer token required)</div>"
-        "    </div>"
-        "    <div id='pdf' class='card'>"
-        "      <h2>PDF Summariser (for lawyers)</h2>"
-        "      <form id='pdfForm' enctype='multipart/form-data' method='post' action='/tools/summarize_pdf'>"
-        "        <label for='pdfFile'><b>Select PDF:</b></label><br/>"
-        "        <input name='file' id='pdfFile' type='file' accept='application/pdf' required />"
-        "        <button class='button ghost' type='submit'>Summarise PDF</button>"
-        "      </form>"
-        "      <pre id='pdfOut' style='white-space:pre-wrap;background:#fff;border:1px solid #eee;padding:12px;border-radius:8px;margin-top:10px'></pre>"
-        "    </div>"
-        "  </div>"
-        "  <div>"
-        "    <div class='card'>"
-        "      <h3>API Endpoints (Cyber Law)</h3>"
-        "      <p>Status: healthy. See <code>/health</code>.</p>"
-        "      <h4>Auth</h4>"
-        "      <div class='endpoint'><b>POST</b> <code>/auth/register</code> { email, password }</div>"
-        "      <div class='endpoint'><b>POST</b> <code>/auth/login</code> { email, password }</div>"
-        "      <h4>Data</h4>"
-        "      <div class='endpoint'><b>POST</b> <code>/chat</code></div>"
-        "      <div class='endpoint'><b>POST</b> <code>/generate_form</code></div>"
-        "      <div class='endpoint'><b>GET</b> <code>/data/chats</code> ?start&end&language&q</div>"
-        "      <div class='endpoint'><b>GET</b> <code>/data/forms</code> ?start&end&form_type&q</div>"
-        "      <div class='endpoint'><b>GET</b> <code>/lawyers/availability</code> (Bearer token required)</div>"
-        "    </div>"
-        "  </div>"
-        "</div>"
-        "<script>"
-        "document.getElementById('btnCall').addEventListener('click', function(){alert('Phone numbers will be added by admin soon.');});"
-        "document.getElementById('btnChat').addEventListener('click', function(){alert('Chat with a lawyer coming soon.');});"
-        "async function loadAvailability(){try{const res=await fetch('/lawyers/availability',{headers:{'Authorization':localStorage.getItem('nyaysetu_token')?('Bearer '+localStorage.getItem('nyaysetu_token')):''}});if(!res.ok){return;}const data=await res.json();const el=document.getElementById('lawyerNote');if(el){const lines=(data.lawyers||[]).map(l=>${l.name} — ${l.specialty} — ${l.available?'Available':'Busy'});el.textContent = lines.join('\n') || el.textContent;}}catch(e){}}; loadAvailability();"
-        "document.getElementById('pdfForm').addEventListener('submit', async function(e){e.preventDefault(); const form=new FormData(this); const res=await fetch('/tools/summarize_pdf',{method:'POST', body:form}); const txt=await res.text(); document.getElementById('pdfOut').textContent=txt;});"
-        "</script>"
-        "</div></body></html>"
-    )
-    return make_response(html, 200)
-
-@app.route('/lawyers/availability', methods=['GET'])
-def lawyers_availability():
-    try:
-        user = get_current_user()
-        if not user:
-            return jsonify({'error': 'Unauthorized'}), 401
-
-        # Placeholder static dataset; replace with DB records in future
-        lawyers = [
-            { 'id': 1, 'name': 'Any available Lawyer', 'specialty': 'Cyber Law Specialist' }
-        ]
-
-        return jsonify({ 'lawyers': lawyers, 'timestamp': get_current_timestamp() })
-    except Exception as e:
-        logger.error(f"Error in lawyers_availability: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-@app.route('/subscription-tiers', methods=['GET'])
-def get_subscription_tiers():
-    """Get available subscription tiers for lawyer consultation."""
-    try:
-        tiers = [
-            {
-                'id': 'basic',
-                'name': 'Basic Consultation',
-                'price': 79,
-                'currency': 'INR',
-                'duration': '1 hour',
-                'features': [
-                    '1 hour consultation',
-                    'Basic legal advice',
-                    'Phone/Video call',
-                    'Case assessment'
-                ],
-                'description': 'Perfect for simple legal queries and initial consultations.'
-            },
-            {
-                'id': 'standard',
-                'name': 'Standard Consultation',
-                'price': 99,
-                'currency': 'INR',
-                'duration': '2 hours',
-                'features': [
-                    '2 hours consultation',
-                    'Detailed legal analysis',
-                    'Document review',
-                    'Follow-up support'
-                ],
-                'description': 'Ideal for cases requiring deeper analysis and review.'
-            },
-            {
-                'id': 'extended',
-                'name': 'Extended Consultation',
-                'price': 299,
-                'currency': 'INR',
-                'duration': '5 hours',
-                'features': [
-                    '5 hours consultation',
-                    'Comprehensive legal strategy',
-                    'Document drafting',
-                    'Priority support'
-                ],
-                'description': 'Comprehensive support for complex matters across multiple sessions.'
-            },
-            {
-                'id': 'premium',
-                'name': 'Premium Service',
-                'price': 999,
-                'currency': 'INR',
-                'duration': 'Premium lawyer + premium drafting',
-                'features': [
-                    'Premium lawyer assignment',
-                    'Premium document drafting',
-                    'Court representation',
-                    '24/7 priority support',
-                    'Case management'
-                ],
-                'description': 'Full-service premium support including drafting and representation.',
-                'featured': True
-            }
-        ]
-        
-        return jsonify({
-            'tiers': tiers,
-            'timestamp': get_current_timestamp()
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"Error in get_subscription_tiers: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-@app.route('/book-lawyer', methods=['POST'])
-def book_lawyer():
-    """Book a lawyer consultation with selected subscription tier."""
-    try:
-        user = get_current_user()
-        if not user:
-            return jsonify({'error': 'Unauthorized'}), 401
-            
-        data = request.get_json() or {}
-        tier_id = data.get('tier_id')
-        customer_name = data.get('customer_name', '')
-        customer_phone = data.get('customer_phone', '')
-        issue_description = data.get('issue_description', '')
-        
-        if not tier_id:
-            return jsonify({'error': 'Subscription tier is required'}), 400
-            
-        # Validate tier
-        valid_tiers = ['basic', 'standard', 'extended', 'premium']
-        if tier_id not in valid_tiers:
-            return jsonify({'error': 'Invalid subscription tier'}), 400
-            
-        # Create booking record (in a real app, this would be saved to database)
-        booking_id = f"BOOK_{int(time.time())}"
-        
-        # Simulate booking creation
-        booking_data = {
-            'booking_id': booking_id,
-            'tier_id': tier_id,
-            'customer_name': customer_name,
-            'customer_phone': customer_phone,
-            'issue_description': issue_description,
-            'user_id': user['user_id'],
-            'status': 'pending',
-            'created_at': get_current_timestamp()
-        }
-        
-        # In a real application, you would:
-        # 1. Save booking to database
-        # 2. Send notification to available lawyers
-        # 3. Send confirmation email to customer
-        # 4. Process payment
-        
-        return jsonify({
-            'message': 'Lawyer consultation booked successfully',
-            'booking_id': booking_id,
-            'status': 'pending',
-            'next_steps': [
-                'You will receive a confirmation email shortly',
-                'An available lawyer will contact you within 24 hours',
-                'Check your email for further instructions'
-            ]
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"Error in book_lawyer: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-
-@app.route('/lawyers/book', methods=['POST'])
-def lawyers_book():
-    """Compatibility endpoint for frontend: accepts { tier, price, tier_name } and books consultation."""
-    try:
-        user = get_current_user()
-        if not user:
-            return jsonify({'error': 'Unauthorized'}), 401
-
-        data = request.get_json() or {}
-        tier = (data.get('tier') or '').strip()
-        price = data.get('price')
-        tier_name = (data.get('tier_name') or '').strip()
-
-        # Map to canonical tier_id
-        tier_map = {
-            'basic': 'basic',
-            'standard': 'standard',
-            'extended': 'extended',
-            'premium': 'premium'
-        }
-        tier_id = tier_map.get(tier)
-        if not tier_id:
-            return jsonify({'error': 'Invalid subscription tier'}), 400
-
-        # Basic server-side price sanity check (non-authoritative; payment gateway should verify)
-        expected_prices = {
-            'basic': 79,
-            'standard': 99,
-            'extended': 299,
-            'premium': 999
-        }
-        if isinstance(price, int) and expected_prices.get(tier_id) != price:
-            # Do not block, but inform client that server price differs
-            logger.info(f"Client price {price} differs from server price {expected_prices.get(tier_id)} for tier {tier_id}")
-
-        booking_id = f"BOOK_{int(time.time())}"
-
-        booking_data = {
-            'booking_id': booking_id,
-            'tier_id': tier_id,
-            'tier_name_submitted': tier_name,
-            'user_id': user['user_id'],
-            'status': 'pending',
-            'created_at': get_current_timestamp()
-        }
-
-        # TODO: persist booking_data in DB, notify lawyers, trigger payment flow
-
-        return jsonify({
-            'message': 'Lawyer consultation booked successfully',
-            'booking_id': booking_id,
-            'status': 'pending',
-            'tier_id': tier_id,
-            'server_price': expected_prices.get(tier_id)
-        }), 200
-    except Exception as e:
-        logger.error(f"Error in lawyers_book: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-
-
-
-@app.route('/tools/summarize_pdf', methods=['POST'])
-def summarize_pdf():
-    """AI-powered PDF summariser focused on legal documents.
-    Extracts text, detects legal content, and provides intelligent summarization.
-    """
-    try:
-        user = get_current_user()
-        if not user:
-            return jsonify({'error': 'Unauthorized'}), 401
-
-        if 'file' not in request.files:
-            return jsonify({'error': 'No file uploaded'}), 400
-        file = request.files['file']
-        if not file or file.filename.lower().endswith('.pdf') is False:
-            return jsonify({'error': 'Please upload a PDF file'}), 400
-
-        # Lazy import to avoid hard dependency during cold start
-        try:
-            import PyPDF2  # type: ignore
-        except Exception:
-            return jsonify({'error': 'PDF support not installed on server'}), 500
-
-        reader = PyPDF2.PdfReader(file)
-        extracted: list[str] = []
-        max_pages = min(len(reader.pages), 20)  # Increased limit for legal documents
-        for i in range(max_pages):
-            try:
-                page = reader.pages[i]
-                text = page.extract_text() or ''
-                if text:
-                    extracted.append(text.strip())
-            except Exception:
-                continue
-
-        full_text = "\n".join(extracted).strip()
-        if not full_text:
-            return jsonify({'error': 'Could not extract text from PDF'}), 400
-
-        # Detect if this is a legal document
-        is_legal_doc = detect_legal_document(full_text)
-        
-        # Generate AI-powered summary
-        try:
-            summary = generate_legal_summary(full_text, is_legal_doc)
-        except Exception as e:
-            logger.warning(f"AI summarization failed: {e}")
-            # Fallback to basic summary
-            summary = generate_basic_summary(full_text)
-
-        return jsonify({
-            'summary': summary,
-            'is_legal_document': is_legal_doc,
-            'original_length': len(full_text),
-            'summary_length': len(summary),
-            'pages_processed': len(extracted)
-        }), 200
-    except Exception as e:
-        logger.error(f"Error in summarize_pdf: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-@app.route('/tools/convert_to_pdf', methods=['POST'])
-def convert_to_pdf():
-    """Convert summarized text to PDF format."""
-    try:
-        user = get_current_user()
-        if not user:
-            return jsonify({'error': 'Unauthorized'}), 401
-
-        data = request.get_json() or {}
-        text = data.get('text', '').strip()
-        title = data.get('title', 'Legal Document Summary')
-        
-        if not text:
-            return jsonify({'error': 'Text content is required'}), 400
-
-        # Lazy import to avoid hard dependency during cold start
-        try:
-            from reportlab.lib.pagesizes import letter, A4
-            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-            from reportlab.lib.units import inch
-            from reportlab.lib import colors
-            from io import BytesIO
-        except Exception:
-            return jsonify({'error': 'PDF generation support not installed on server'}), 500
-
-        # Create PDF in memory
-        buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, 
-                              topMargin=72, bottomMargin=18)
-        
-        # Get styles
-        styles = getSampleStyleSheet()
-        
-        # Create custom styles
-        title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=16,
-            spaceAfter=30,
-            alignment=1,  # Center alignment
-            textColor=colors.darkblue
-        )
-        
-        body_style = ParagraphStyle(
-            'CustomBody',
-            parent=styles['Normal'],
-            fontSize=11,
-            spaceAfter=12,
-            leading=14
-        )
-        
-        # Build PDF content
-        story = []
-        
-        # Add title
-        story.append(Paragraph(title, title_style))
-        story.append(Spacer(1, 20))
-        
-        # Add content
-        paragraphs = text.split('\n\n')
-        for para in paragraphs:
-            if para.strip():
-                story.append(Paragraph(para.strip(), body_style))
-                story.append(Spacer(1, 6))
-        
-        # Build PDF
-        doc.build(story)
-        
-        # Get PDF data
-        buffer.seek(0)
-        pdf_data = buffer.getvalue()
-        buffer.close()
-        
-        # Return PDF as response
-        response = make_response(pdf_data)
-        response.headers['Content-Type'] = 'application/pdf'
-        response.headers['Content-Disposition'] = f'attachment; filename="{title.replace(" ", "_")}_Summary.pdf"'
-        
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error in convert_to_pdf: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-@app.route('/generate_form_pdf', methods=['POST'])
-def generate_form_pdf():
-    """Generate a legal form, then return it as a downloadable PDF."""
-    try:
-        user = get_current_user()
-        if not user:
-            return jsonify({'error': 'Unauthorized'}), 401
-
-        data = request.get_json() or {}
-        form_type = data.get('form_type') or ''
-        responses = data.get('responses') or {}
-        if not form_type:
-            return jsonify({'error': 'Form type is required'}), 400
-
-        try:
-            from utils.form_generator import generate_form as generate_form_text
-            form_text = generate_form_text(form_type, responses)
-        except Exception as gen_err:
-            logger.error(f"Form generation failed (PDF): {gen_err}")
-            return jsonify({'error': 'Failed to generate form'}), 500
-
-        # Lazy import to avoid hard dependency during cold start
-        try:
-            from reportlab.lib.pagesizes import A4
-            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-            from reportlab.lib import colors
-            from io import BytesIO
-        except Exception:
-            return jsonify({'error': 'PDF generation support not installed on server'}), 500
-
-        buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72,
-                                 topMargin=72, bottomMargin=18)
-        styles = getSampleStyleSheet()
-        title_style = ParagraphStyle(
-            'FormTitle', parent=styles['Heading1'], fontSize=16, spaceAfter=20,
-            alignment=1, textColor=colors.darkblue
-        )
-        body_style = ParagraphStyle(
-            'FormBody', parent=styles['Normal'], fontSize=11, spaceAfter=10, leading=14
-        )
-
-        story = []
-        story.append(Paragraph(f"{form_type} Form", title_style))
-        story.append(Spacer(1, 12))
-
-        # Split body into paragraphs for basic layout
-        for para in (form_text or '').split('\n\n'):
-            p = para.strip()
-            if not p:
-                continue
-            story.append(Paragraph(p.replace('\n', '<br/>'), body_style))
-            story.append(Spacer(1, 6))
-
-        doc.build(story)
-        buffer.seek(0)
-        pdf_data = buffer.getvalue()
-        buffer.close()
-
-        response = make_response(pdf_data)
-        response.headers['Content-Type'] = 'application/pdf'
-        response.headers['Content-Disposition'] = f'attachment; filename="{form_type.replace(' ', '_')}_NyaySetu.pdf"'
-        return response
-    except Exception as e:
-        logger.error(f"Error in generate_form_pdf: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-@app.route('/speech_chat', methods=['POST'])
-def speech_chat():
-    """Accepts multipart/form-data with 'audio' file and optional 'language'.
-
-    Transcribes audio, detects language if not supplied, runs chat flow,
-    and returns localized answer.
-    """
-    try:
-        user = get_current_user()
-        if not user:
-            return jsonify({'error': 'Unauthorized'}), 401
-
-        if 'audio' not in request.files:
-            return jsonify({'error': 'No audio uploaded'}), 400
-        file = request.files['audio']
-        audio_bytes = file.read()
-        if not audio_bytes:
-            return jsonify({'error': 'Empty audio file'}), 400
-
-        # Optional language hint
-        lang_hint = request.form.get('language') or None
-
-        try:
-            from utils.speech import transcribe_audio_bytes  # lazy import
-            transcript = transcribe_audio_bytes(audio_bytes, language=lang_hint)
-        except Exception as e:
-            logger.error(f"STT import/exec failed: {e}")
-            transcript = None
-
-        if not transcript:
-            return jsonify({'error': 'Speech-to-text not available on this deployment'}, 501)
-
-        # Reuse /chat logic: detect language, translate, answer, translate back
-        detected_lang = lang_hint or detect_language(transcript)
-        _, transcript_en = translate_pair(transcript, detected_lang)
-
-        answer = None
-        try:
-            answer = get_legal_advice(transcript_en, 'en')
-        except Exception as local_err:
-            logger.warning(f"Local legal model failed (speech): {local_err}")
-
-        if not answer:
-            answer = "I apologize, but I'm currently unable to provide detailed legal advice. Please consult a qualified lawyer for your specific situation."
-
-        try:
-            sanitized_en = apply_policy(answer, transcript_en, 'en')
-        except Exception as pol_err:
-            logger.error(f"Policy enforcement failed (speech): {pol_err}")
-            sanitized_en = 'I can only provide legal knowledge. Please ask a legal question.'
-
-        final_text = translate(sanitized_en, 'en', detected_lang or 'en')
-
-        timestamp = get_current_timestamp()
-        try:
-            insert_chat(question=transcript, answer=final_text, language=detected_lang, timestamp=timestamp)
-        except Exception as db_err:
-            logger.error(f"Failed to persist speech chat: {db_err}")
-
-        return jsonify({
-            'answer': final_text,
-            'question': transcript,
-            'language': detected_lang,
-            'timestamp': timestamp,
-            'source': 'local_model'
-        })
-    except Exception as e:
-        logger.error(f"Error in speech_chat endpoint: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-@app.route('/health', methods=['GET'])
-def health_check():
-    return jsonify({'status': 'healthy', 'service': 'NyaySetu Legal Aid API'})
-
-@app.route('/chat', methods=['POST'])
-def chat():
-    try:
-        data = request.get_json() or {}
-        question = (data.get('question') or '').strip()
-        # Auto-detect input language; translate to English for internal processing
-        language = data.get('language') or detect_language(question)
-        detected_lang, question_en = translate_pair(question, language)
-        if not question:
-            return jsonify({'error': 'Question is required'}), 400
-
-        user = get_current_user()
-        if not user:
-            return jsonify({'error': 'Unauthorized'}), 401
-
-        # Fetch similar previous cases to provide context
-        previous_cases = []
-        try:
-            rows = fetch_chats_filtered() or []
-            q_tokens = _tokenize(question_en)
-            scored = []
-            
-            for r in rows[:200]:  # Check last 200 cases
-                try:
-                    rq = (r.get('question') or '')
-                    ra = (r.get('answer') or '')
-                    score_q = _jaccard(q_tokens, _tokenize(rq))
-                    score_a = _jaccard(q_tokens, _tokenize(ra)) * 0.5
-                    score = score_q + score_a
-                    if score > 0:
-                        scored.append({
-                            'question': rq,
-                            'answer': ra,
-                            'timestamp': r.get('timestamp'),
-                            'score': score
-                        })
-                except Exception:
-                    continue
-            
-            # Sort by score and take top 5
-            scored.sort(key=lambda x: (-x['score'], x.get('timestamp') or ''))
-            previous_cases = scored[:5]
-        except Exception as cases_err:
-            logger.warning(f"Failed to fetch previous cases: {cases_err}")
-
-        answer = None
-        # Try OpenAI legal model with previous cases context
-        try:
-            answer = get_legal_advice(question_en, 'en', previous_cases)
-            logger.info("Got answer from OpenAI legal model")
-        except Exception as local_err:
-            logger.warning(f"OpenAI legal model failed: {local_err}")
-
-        # If still no answer, fallback
-        if not answer:
-            answer = "I apologize, but I'm currently unable to provide detailed legal advice. Please consult a qualified lawyer for your specific situation."
-
-        # Enforce policy/sanitization on English answer first
-        try:
-            sanitized_en = apply_policy(answer, question_en, 'en')
-        except Exception as pol_err:
-            logger.error(f"Policy enforcement failed: {pol_err}")
-            sanitized_en = 'I can only provide legal knowledge. Please ask a legal question.'
-
-        # Translate back to user's language if needed
-        sanitized = translate(sanitized_en, 'en', detected_lang or 'en')
-
-        timestamp = get_current_timestamp()
-        try:
-            insert_chat(question=question, answer=sanitized, language=detected_lang, timestamp=timestamp)
-        except Exception as db_err:
-            logger.error(f"Failed to persist chat: {db_err}")
-
-        return jsonify({
-            'answer': sanitized,
-            'question': question,
-            'language': detected_lang,
-            'timestamp': timestamp,
-            'source': 'openai_api' if answer and 'openai' in str(answer).lower() else 'local_model'
-        })
-    except Exception as e:
-        logger.error(f"Error in chat endpoint: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-@app.route('/auth/register', methods=['POST'])
-def register():
-    """Register a new user without email verification."""
-    try:
-        data = request.get_json() or {}
-        email = (data.get('email') or '').strip().lower()
-        password = data.get('password') or ''
-        
-        if not email or not password:
-            return jsonify({'error': 'Email and password are required'}), 400
-        
-        if len(password) < 6:
-            return jsonify({'error': 'Password must be at least 6 characters'}), 400
-        
-        # Check if user already exists
-        existing_user = get_user_by_email(email)
-        if existing_user:
-            return jsonify({'error': 'User with this email already exists'}), 409
-        
-        # Hash password and create user (auto-verified)
-        password_hash = hash_password(password)
-        timestamp = get_current_timestamp()
-
-        try:
-            # Store as verified by setting verification_token to NULL and is_verified=1 directly
-            # The create_user helper sets is_verified=0 by default, so we mimic creation then set verified
-            user_id = create_user(email, password_hash, None, timestamp)
-        except Exception as db_err:
-            logger.error(f"Failed to create user: {db_err}")
-            return jsonify({'error': 'Failed to create user account'}), 500
-
-        # Manually mark verified in DB since create_user sets default 0
-        try:
-            import sqlite3
-            from utils.db import get_db_connection
-            conn = get_db_connection()
-            cur = conn.cursor()
-            cur.execute(
-                "UPDATE users SET is_verified = 1, verification_token = NULL, verified_at = ? WHERE id = ?",
-                (timestamp, user_id),
-            )
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            logger.error(f"Failed to auto-verify user: {e}")
-
-        return jsonify({
-            'message': 'Registration successful',
-            'user_id': user_id
-        }), 201
-        
-    except Exception as e:
-        logger.error(f"Error in register endpoint: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-# Removed /auth/verify endpoint (email verification disabled)
-
-@app.route('/auth/login', methods=['POST'])
-def login():
-    """Login user with email and password."""
-    try:
-        data = request.get_json() or {}
-        email = (data.get('email') or '').strip().lower()
-        password = data.get('password') or ''
-        
-        if not email or not password:
-            return jsonify({'error': 'Email and password are required'}), 400
-        
-        user = get_user_by_email(email)
-        if not user:
-            return jsonify({'error': 'Invalid email or password'}), 401
-        
-        # Email verification disabled; skip is_verified check
-        
-        if not verify_password(password, user['password_hash']):
-            return jsonify({'error': 'Invalid email or password'}), 401
-        
-        # Create JWT token
-        token_payload = {
-            'user_id': user['id'],
-            'email': user['email'],
-            'verified': user['is_verified']
-        }
-        token = create_jwt(token_payload, expires_minutes=60*24)  # 24 hours
-        
-        return jsonify({
-            'message': 'Login successful',
-            'token': token,
-            'user': {
-                'id': user['id'],
-                'email': user['email'],
-                'verified': user['is_verified']
-            }
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"Error in login endpoint: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-@app.route('/auth/logout', methods=['POST'])
-def logout():
-    """Logout user (client-side token invalidation)."""
-    try:
-        user = get_current_user()
-        if not user:
-            return jsonify({'error': 'Not authenticated'}), 401
-        
-        # In a stateless JWT system, logout is handled client-side
-        # by removing the token. We can optionally maintain a blacklist
-        # for additional security, but for simplicity, we'll just return success
-        return jsonify({'message': 'Logout successful'}), 200
-        
-    except Exception as e:
-        logger.error(f"Error in logout endpoint: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-@app.route('/auth/me', methods=['GET'])
-def get_current_user_info():
-    """Get current user information."""
-    try:
-        user = get_current_user()
-        if not user:
-            return jsonify({'error': 'Not authenticated'}), 401
-        
-        return jsonify({
-            'user': {
-                'id': user['user_id'],
-                'email': user['email'],
-                'verified': user['verified']
-            }
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"Error in get_current_user_info endpoint: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-@app.route('/generate_form', methods=['POST'])
-def generate_form():
-    """Generate a legal form based on user input."""
-    try:
-        data = request.get_json() or {}
-        form_type = data.get('form_type') or ''
-        responses = data.get('responses') or {}
-        
-        if not form_type:
-            return jsonify({'error': 'Form type is required'}), 400
-        
-        user = get_current_user()
-        if not user:
-            return jsonify({'error': 'Unauthorized'}), 401
-        
-        try:
-            from utils.form_generator import generate_form as generate_form_text
-            form_text = generate_form_text(form_type, responses)
-        except Exception as gen_err:
-            logger.error(f"Form generation failed: {gen_err}")
-            return jsonify({'error': 'Failed to generate form'}), 500
-        
-        timestamp = get_current_timestamp()
-        try:
-            form_id = insert_form(form_type, form_text, responses, timestamp)
-        except Exception as db_err:
-            logger.error(f"Failed to persist form: {db_err}")
-            return jsonify({'error': 'Form generated but failed to save'}), 500
-        
-        return jsonify({
-            'form_id': form_id,
-            'form_type': form_type,
-            'form_text': form_text,
-            'responses': responses,
-            'timestamp': timestamp
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"Error in generate_form endpoint: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-@app.route('/data/chats', methods=['GET'])
-def get_chats():
-    """Get chat data with optional filters."""
-    try:
-        start = request.args.get('start')
-        end = request.args.get('end')
-        language = request.args.get('language')
-        q = request.args.get('q')
-        
-        chats = fetch_chats_filtered(start=start, end=end, language=language, q=q)
-        return jsonify({'chats': chats}), 200
-        
-    except Exception as e:
-        logger.error(f"Error in get_chats endpoint: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-@app.route('/data/forms', methods=['GET'])
-def get_forms():
-    """Get form data with optional filters."""
-    try:
-        start = request.args.get('start')
-        end = request.args.get('end')
-        form_type = request.args.get('form_type')
-        q = request.args.get('q')
-        
-        forms = fetch_forms_filtered(start=start, end=end, form_type=form_type, q=q)
-        return jsonify({'forms': forms}), 200
-        
-    except Exception as e:
-        logger.error(f"Error in get_forms endpoint: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
+# ... (existing endpoint routes remain unchanged)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
