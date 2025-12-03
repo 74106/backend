@@ -222,6 +222,31 @@ def fetch_forms_filtered(
         conn.close()
 
 
+# Recently resolved chats -----------------------------------------------------
+def fetch_recent_chats(
+    limit: int = 5,
+    db_path: str = _DEFAULT_DB_PATH,
+) -> List[Dict[str, Any]]:
+    """Fetch the latest chat records to showcase past resolved cases."""
+    conn = get_db_connection(db_path)
+    try:
+        clamp_limit = max(1, min(int(limit or 5), 50))
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, question, answer, language, timestamp
+            FROM chats
+            ORDER BY timestamp DESC, id DESC
+            LIMIT ?
+            """,
+            (clamp_limit,),
+        )
+        rows = cur.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
 # Users helpers
 def create_user(
     email: str,
