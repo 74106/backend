@@ -1280,15 +1280,43 @@ def chat():
         if not user:
             return jsonify({'error': 'Unauthorized'}), 401
 
-        answer = None
-        # Try local legal model first
+        # Fetch similar previous cases to provide context
+        previous_cases = []
         try:
-            answer = get_legal_advice(question_en, 'en')
-            logger.info("Got answer from local legal model")
-        except Exception as local_err:
-            logger.warning(f"Local legal model failed: {local_err}")
+            rows = fetch_chats_filtered() or []
+            q_tokens = _tokenize(question_en)
+            scored = []
+            
+            for r in rows[:200]:  # Check last 200 cases
+                try:
+                    rq = (r.get('question') or '')
+                    ra = (r.get('answer') or '')
+                    score_q = _jaccard(q_tokens, _tokenize(rq))
+                    score_a = _jaccard(q_tokens, _tokenize(ra)) * 0.5
+                    score = score_q + score_a
+                    if score > 0:
+                        scored.append({
+                            'question': rq,
+                            'answer': ra,
+                            'timestamp': r.get('timestamp'),
+                            'score': score
+                        })
+                except Exception:
+                    continue
+            
+            # Sort by score and take top 5
+            scored.sort(key=lambda x: (-x['score'], x.get('timestamp') or ''))
+            previous_cases = scored[:5]
+        except Exception as cases_err:
+            logger.warning(f"Failed to fetch previous cases: {cases_err}")
 
-        # If local model failed, nothing else to try (Gemini handled in model)
+        answer = None
+        # Try OpenAI legal model with previous cases context
+        try:
+            answer = get_legal_advice(question_en, 'en', previous_cases)
+            logger.info("Got answer from OpenAI legal model")
+        except Exception as local_err:
+            logger.warning(f"OpenAI legal model failed: {local_err}")
 
         # If still no answer, fallback
         if not answer:
@@ -1315,7 +1343,7 @@ def chat():
             'question': question,
             'language': detected_lang,
             'timestamp': timestamp,
-            'source': 'cohere_api' if answer and 'cohere' in str(answer).lower() else 'local_model'
+            'source': 'openai_api' if answer and 'openai' in str(answer).lower() else 'local_model'
         })
     except Exception as e:
         logger.error(f"Error in chat endpoint: {e}")
