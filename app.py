@@ -14,11 +14,6 @@ from utils.db import (
     fetch_forms_filtered,
     create_user,
     get_user_by_email,
-    list_lawyer_profiles,
-    insert_lawyer_booking,
-    create_subscription_purchase,
-    get_subscription_purchase,
-    get_user_subscriptions,
 )
 import logging
 import os
@@ -55,9 +50,6 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 init_db()
-
-LAWYER_PORTAL_KEY = os.environ.get('LAWYER_PORTAL_KEY')
-LAWYER_UPI_HANDLE = os.environ.get('LAWYER_UPI_ID', 'cyberverge@upi')
 
 # Legal document detection and summarization helpers
 def detect_legal_document(text: str) -> bool:
@@ -161,129 +153,6 @@ def get_current_timestamp() -> str:
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).isoformat()
 
-
-def _portal_request_authorized() -> bool:
-    """Validate incoming requests from the lawyer portal (if key configured)."""
-    if not LAWYER_PORTAL_KEY:
-        return True
-    candidate = (
-        request.headers.get('X-Portal-Key')
-        or request.args.get('api_key')
-        or (request.get_json(silent=True) or {}).get('api_key')
-    )
-    if not candidate:
-        return False
-    try:
-        return secrets.compare_digest(str(candidate), LAWYER_PORTAL_KEY)
-    except Exception:
-        return str(candidate) == LAWYER_PORTAL_KEY
-
-
-def get_consultation_tiers() -> list[dict]:
-    """Central definition of consultation tiers so frontend and APIs stay in sync."""
-    return [
-        {
-            'id': 'basic',
-            'name': '79 / Quick Help',
-            'price': 79,
-            'currency': 'INR',
-            'duration': '1 hour',
-            'hours': 1,
-            'features': [
-                '1 hour consultation (voice/video/chat)',
-                'Immediate cyber-law triage',
-                'Checklist of documents to gather'
-            ]
-        },
-        {
-            'id': 'standard',
-            'name': '199 / Deep Dive',
-            'price': 199,
-            'currency': 'INR',
-            'duration': '3 hours',
-            'hours': 3,
-            'features': [
-                'Up to 3 hours split across the day',
-                'Detailed analysis of FIR/complaints',
-                'Follow-up call & drafts review'
-            ]
-        },
-        {
-            'id': 'extended',
-            'name': '299 / Case Build',
-            'price': 299,
-            'currency': 'INR',
-            'duration': '5 hours',
-            'hours': 5,
-            'features': [
-                '5 lawyer hours for complex matters',
-                'Drafting of notices / RTI / complaints',
-                'Priority slot + escalation support'
-            ]
-        },
-        {
-            'id': 'premium',
-            'name': '999 / Premium Lawyer',
-            'price': 999,
-            'currency': 'INR',
-            'duration': 'Premium cyber-law partner',
-            'hours': 8,
-            'featured': True,
-            'features': [
-                'Top-tier cyber lawyer & dedicated VC room',
-                'Full drafting, appeals & representation plan',
-                '24/7 hotline + case manager'
-            ]
-        },
-    ]
-
-
-def _mask_phone(value: str | None) -> str | None:
-    if not value:
-        return None
-    digits = ''.join(ch for ch in value if ch.isdigit())
-    if len(digits) < 4:
-        return None
-    return f"+91-XXX-XXX-{digits[-4:]}" if len(digits) >= 4 else digits
-
-
-def _short_text(text: str | None, limit: int = 220) -> str:
-    if not text:
-        return ''
-    clean = re.sub(r'\s+', ' ', text).strip()
-    if len(clean) <= limit:
-        return clean
-    return clean[: max(0, limit - 3)].rstrip() + '...'
-
-
-def _public_lawyer_payload(profile: dict) -> dict:
-    """Prepare lawyer profile for client consumption."""
-    availability = profile.get('availability') or []
-    communication = profile.get('communication') or profile.get('communication_modes') or []
-    consultation_modes = profile.get('consultation_modes') or []
-    return {
-        'id': profile.get('id'),
-        'name': profile.get('full_name'),
-        'specialization': profile.get('specialization'),
-        'experience_years': profile.get('experience_years'),
-        'languages': profile.get('languages'),
-        'location': profile.get('location') or 'Pan-India',
-        'status': profile.get('status') or ('Available' if profile.get('is_available') else 'Busy'),
-        'is_available': bool(profile.get('is_available')),
-        'cases_handled': profile.get('cases_handled') or 0,
-        'rating': round(float(profile.get('rating') or 4.8), 1),
-        'masked_phone': _mask_phone(profile.get('phone')),
-        'email': profile.get('email'),
-        'bio_excerpt': _short_text(profile.get('bio')),
-        'availability': availability,
-        'communication_modes': communication,
-        'consultation_modes': consultation_modes or communication,
-        'hourly_rate': profile.get('hourly_rate'),
-        'photo_url': profile.get('photo_url'),
-        'video_link': profile.get('video_link'),
-        'updated_at': profile.get('updated_at'),
-    }
-
 # Password helpers
 def hash_password(password: str) -> str:
     if _generate_password_hash:
@@ -347,7 +216,7 @@ def _jaccard(a: set[str], b: set[str]) -> float:
 
 
 def _summarize_text(content: str, max_length: int = 360) -> str:
-    """Generate a short, reassuring summary snippet."""
+    """Generate a short summary snippet."""
     summary = (content or "").strip()
     summary = re.sub(r"\s+", " ", summary)
     if len(summary) > max_length:
@@ -400,7 +269,6 @@ def _search_cases_by_court(
             logger.info(f"Kanoon showcase query failed ({err}); falling back to open search")
 
     if not results:
-        # Fallback: DuckDuckGo search constrained to official domains
         ddg_query = query
         if court_hints:
             ddg_query = f"{query} {' '.join(court_hints)}"
@@ -476,52 +344,8 @@ def similar_cases():
 
         scored.sort(key=lambda x: (-x['score'], x.get('timestamp') or ''))
         return jsonify({'similar': scored[:limit]}), 200
-    except Exception as e:
+        except Exception as e:
         logger.error(f"Error in similar_cases endpoint: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-
-@app.route('/cases/previous', methods=['GET'])
-def previous_cases():
-    """Return recent landmark decisions from Supreme, High, and District courts."""
-    try:
-        user = get_current_user()
-        if not user:
-            return jsonify({'error': 'Unauthorized'}), 401
-
-        try:
-            per_court = int(request.args.get('limit') or 3)
-        except Exception:
-            per_court = 3
-        per_court = max(1, min(per_court, 5))
-
-        showcase = {
-            'supreme_court': _search_cases_by_court(
-                "Supreme Court of India cyber law victim relief judgement",
-                limit=per_court,
-                court_hints=['supreme court'],
-                fallback_court_label='Supreme Court of India',
-            ),
-            'high_courts': _search_cases_by_court(
-                "High Court cyber fraud compensation order",
-                limit=per_court,
-                court_hints=['high court'],
-                fallback_court_label='High Court',
-            ),
-            'district_courts': _search_cases_by_court(
-                "District court cyber crime conviction India",
-                limit=per_court,
-                court_hints=['district court', 'sessions court'],
-                fallback_court_label='District / Sessions Court',
-            ),
-        }
-
-        return jsonify({
-            'cases': showcase,
-            'generated_at': get_current_timestamp(),
-        }), 200
-    except Exception as e:
-        logger.error(f"Error in previous_cases endpoint: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
 
@@ -781,135 +605,92 @@ def root():
 @app.route('/lawyers/availability', methods=['GET'])
 def lawyers_availability():
     try:
-        profiles = list_lawyer_profiles()
-        public_profiles = [_public_lawyer_payload(p) for p in profiles]
-        summary = {
-            'total': len(public_profiles),
-            'available': sum(1 for p in public_profiles if p['is_available']),
-        }
-        tiers = get_consultation_tiers()
-        return jsonify({
-            'lawyers': public_profiles,
-            'timestamp': get_current_timestamp(),
-            'summary': summary,
-            'tiers': tiers,
-            'payment': {
-                'upi_handle': LAWYER_UPI_HANDLE,
-                'requires_pre_payment': True,
-                'note': 'Purchase a subscription tier first using /subscriptions/purchase, then use the subscription_id to book a lawyer.'
-            }
-        })
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': 'Unauthorized'}), 401
+
+        # Placeholder static dataset; replace with DB records in future
+        lawyers = [
+            { 'id': 1, 'name': 'Any available Lawyer', 'specialty': 'Cyber Law Specialist' }
+        ]
+
+        return jsonify({ 'lawyers': lawyers, 'timestamp': get_current_timestamp() })
     except Exception as e:
         logger.error(f"Error in lawyers_availability: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-
-@app.route('/lawyers/profiles', methods=['GET'])
-def lawyers_profiles():
-    try:
-        email_filter = (request.args.get('email') or '').strip().lower()
-        only_available = request.args.get('available') == '1'
-        try:
-            limit = int(request.args.get('limit')) if request.args.get('limit') else None
-        except Exception:
-            limit = None
-        profiles = list_lawyer_profiles(only_available=only_available, limit=limit)
-        if email_filter:
-            profiles = [p for p in profiles if (p.get('email') or '').lower() == email_filter]
-        public = [_public_lawyer_payload(p) for p in profiles]
-        return jsonify({
-            'lawyers': public,
-            'count': len(public),
-            'tiers': get_consultation_tiers(),
-            'payment': {'upi_handle': LAWYER_UPI_HANDLE, 'requires_pre_payment': True},
-            'timestamp': get_current_timestamp()
-        }), 200
-    except Exception as e:
-        logger.error(f"Error in lawyers_profiles: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/subscription-tiers', methods=['GET'])
 def get_subscription_tiers():
     """Get available subscription tiers for lawyer consultation."""
     try:
-        return jsonify({
-            'tiers': get_consultation_tiers(),
-            'timestamp': get_current_timestamp(),
-            'payment': {
-                'requires_pre_payment': True,
-                'upi_handle': LAWYER_UPI_HANDLE,
-                'note': 'Purchase a subscription tier first, then use the subscription_id to book a lawyer.'
+        tiers = [
+            {
+                'id': 'basic',
+                'name': 'Basic Consultation',
+                'price': 79,
+                'currency': 'INR',
+                'duration': '1 hour',
+                'features': [
+                    '1 hour consultation',
+                    'Basic legal advice',
+                    'Phone/Video call',
+                    'Case assessment'
+                ],
+                'description': 'Perfect for simple legal queries and initial consultations.'
+            },
+            {
+                'id': 'standard',
+                'name': 'Standard Consultation',
+                'price': 99,
+                'currency': 'INR',
+                'duration': '2 hours',
+                'features': [
+                    '2 hours consultation',
+                    'Detailed legal analysis',
+                    'Document review',
+                    'Follow-up support'
+                ],
+                'description': 'Ideal for cases requiring deeper analysis and review.'
+            },
+            {
+                'id': 'extended',
+                'name': 'Extended Consultation',
+                'price': 299,
+                'currency': 'INR',
+                'duration': '5 hours',
+                'features': [
+                    '5 hours consultation',
+                    'Comprehensive legal strategy',
+                    'Document drafting',
+                    'Priority support'
+                ],
+                'description': 'Comprehensive support for complex matters across multiple sessions.'
+            },
+            {
+                'id': 'premium',
+                'name': 'Premium Service',
+                'price': 999,
+                'currency': 'INR',
+                'duration': 'Premium lawyer + premium drafting',
+                'features': [
+                    'Premium lawyer assignment',
+                    'Premium document drafting',
+                    'Court representation',
+                    '24/7 priority support',
+                    'Case management'
+                ],
+                'description': 'Full-service premium support including drafting and representation.',
+                'featured': True
             }
+        ]
+        
+        return jsonify({
+            'tiers': tiers,
+            'timestamp': get_current_timestamp()
         }), 200
         
     except Exception as e:
         logger.error(f"Error in get_subscription_tiers: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-@app.route('/subscriptions/purchase', methods=['POST'])
-def purchase_subscription():
-    """Purchase a subscription tier. User pays first, then gets a subscription_id to book lawyers."""
-    try:
-        user = get_current_user()
-        if not user:
-            return jsonify({'error': 'Unauthorized'}), 401
-        
-        data = request.get_json() or {}
-        tier_id = (data.get('tier_id') or '').strip().lower()
-        payment_reference = (data.get('payment_reference') or '').strip()
-        
-        if not tier_id:
-            return jsonify({'error': 'tier_id is required'}), 400
-        
-        if not payment_reference:
-            return jsonify({'error': 'payment_reference is required. Please provide your UPI transaction reference.'}), 400
-        
-        # Validate tier
-        tiers = {t['id']: t for t in get_consultation_tiers()}
-        tier = tiers.get(tier_id)
-        if not tier:
-            return jsonify({'error': 'Invalid subscription tier'}), 400
-        
-        # Create subscription purchase
-        subscription = create_subscription_purchase({
-            'user_id': user['user_id'],
-            'tier_id': tier_id,
-            'tier_name': tier['name'],
-            'price': tier['price'],
-            'payment_reference': payment_reference,
-            'status': 'active'
-        })
-        
-        return jsonify({
-            'message': 'Subscription purchased successfully',
-            'subscription': subscription,
-            'tier': tier,
-            'next_steps': [
-                'Use the subscription_id to book a lawyer consultation',
-                'Your subscription is active and ready to use'
-            ]
-        }), 201
-        
-    except Exception as e:
-        logger.error(f"Error in purchase_subscription: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-@app.route('/subscriptions/my', methods=['GET'])
-def get_my_subscriptions():
-    """Get current user's active subscriptions."""
-    try:
-        user = get_current_user()
-        if not user:
-            return jsonify({'error': 'Unauthorized'}), 401
-        
-        subscriptions = get_user_subscriptions(user['user_id'])
-        return jsonify({
-            'subscriptions': subscriptions,
-            'count': len(subscriptions)
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"Error in get_my_subscriptions: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/book-lawyer', methods=['POST'])
@@ -921,8 +702,50 @@ def book_lawyer():
             return jsonify({'error': 'Unauthorized'}), 401
             
         data = request.get_json() or {}
-        response, status = _handle_lawyer_booking(user, data)
-        return jsonify(response), status
+        tier_id = data.get('tier_id')
+        customer_name = data.get('customer_name', '')
+        customer_phone = data.get('customer_phone', '')
+        issue_description = data.get('issue_description', '')
+        
+        if not tier_id:
+            return jsonify({'error': 'Subscription tier is required'}), 400
+            
+        # Validate tier
+        valid_tiers = ['basic', 'standard', 'extended', 'premium']
+        if tier_id not in valid_tiers:
+            return jsonify({'error': 'Invalid subscription tier'}), 400
+            
+        # Create booking record (in a real app, this would be saved to database)
+        booking_id = f"BOOK_{int(time.time())}"
+        
+        # Simulate booking creation
+        booking_data = {
+            'booking_id': booking_id,
+            'tier_id': tier_id,
+            'customer_name': customer_name,
+            'customer_phone': customer_phone,
+            'issue_description': issue_description,
+            'user_id': user['user_id'],
+            'status': 'pending',
+            'created_at': get_current_timestamp()
+        }
+        
+        # In a real application, you would:
+        # 1. Save booking to database
+        # 2. Send notification to available lawyers
+        # 3. Send confirmation email to customer
+        # 4. Process payment
+        
+        return jsonify({
+            'message': 'Lawyer consultation booked successfully',
+            'booking_id': booking_id,
+            'status': 'pending',
+            'next_steps': [
+                'You will receive a confirmation email shortly',
+                'An available lawyer will contact you within 24 hours',
+                'Check your email for further instructions'
+            ]
+        }), 200
         
     except Exception as e:
         logger.error(f"Error in book_lawyer: {e}")
@@ -938,8 +761,52 @@ def lawyers_book():
             return jsonify({'error': 'Unauthorized'}), 401
 
         data = request.get_json() or {}
-        response, status = _handle_lawyer_booking(user, data)
-        return jsonify(response), status
+        tier = (data.get('tier') or '').strip()
+        price = data.get('price')
+        tier_name = (data.get('tier_name') or '').strip()
+
+        # Map to canonical tier_id
+        tier_map = {
+            'basic': 'basic',
+            'standard': 'standard',
+            'extended': 'extended',
+            'premium': 'premium'
+        }
+        tier_id = tier_map.get(tier)
+        if not tier_id:
+            return jsonify({'error': 'Invalid subscription tier'}), 400
+
+        # Basic server-side price sanity check (non-authoritative; payment gateway should verify)
+        expected_prices = {
+            'basic': 79,
+            'standard': 99,
+            'extended': 299,
+            'premium': 999
+        }
+        if isinstance(price, int) and expected_prices.get(tier_id) != price:
+            # Do not block, but inform client that server price differs
+            logger.info(f"Client price {price} differs from server price {expected_prices.get(tier_id)} for tier {tier_id}")
+
+        booking_id = f"BOOK_{int(time.time())}"
+
+        booking_data = {
+            'booking_id': booking_id,
+            'tier_id': tier_id,
+            'tier_name_submitted': tier_name,
+            'user_id': user['user_id'],
+            'status': 'pending',
+            'created_at': get_current_timestamp()
+        }
+
+        # TODO: persist booking_data in DB, notify lawyers, trigger payment flow
+
+        return jsonify({
+            'message': 'Lawyer consultation booked successfully',
+            'booking_id': booking_id,
+            'status': 'pending',
+            'tier_id': tier_id,
+            'server_price': expected_prices.get(tier_id)
+        }), 200
     except Exception as e:
         logger.error(f"Error in lawyers_book: {e}")
         return jsonify({'error': 'Internal server error'}), 500
@@ -1233,79 +1100,6 @@ def speech_chat():
 @app.route('/health', methods=['GET'])
 def health_check():
     return jsonify({'status': 'healthy', 'service': 'NyaySetu Legal Aid API'})
-
-
-def _handle_lawyer_booking(user: dict, payload: dict) -> tuple[dict, int]:
-    subscription_id_raw = payload.get('subscription_id')
-    if not subscription_id_raw:
-        return {'error': 'subscription_id is required. Please purchase a subscription tier first using /subscriptions/purchase'}, 400
-    
-    try:
-        subscription_id = int(subscription_id_raw)
-    except Exception:
-        return {'error': 'Invalid subscription_id format'}, 400
-    
-    # Verify subscription belongs to user and is active
-    subscription = get_subscription_purchase(subscription_id)
-    if not subscription:
-        return {'error': 'Subscription not found'}, 404
-    
-    if subscription['user_id'] != user['user_id']:
-        return {'error': 'Unauthorized: This subscription does not belong to you'}, 403
-    
-    if subscription['status'] != 'active':
-        return {'error': f'Subscription is not active. Current status: {subscription["status"]}'}, 400
-    
-    tier_id = subscription['tier_id']
-    tiers = {t['id']: t for t in get_consultation_tiers()}
-    tier = tiers.get(tier_id)
-    if not tier:
-        return {'error': 'Invalid subscription tier'}, 400
-
-    customer_name = (payload.get('customer_name') or '').strip()
-    customer_phone = (payload.get('customer_phone') or '').strip()
-    issue_description = (payload.get('issue_description') or '').strip()
-    preferred_lawyer_raw = payload.get('preferred_lawyer_id') or payload.get('lawyer_id')
-    preferred_lawyer_id = None
-    if preferred_lawyer_raw:
-        try:
-            preferred_lawyer_id = int(preferred_lawyer_raw)
-        except Exception:
-            preferred_lawyer_id = None
-
-    booking_id = f"BOOK_{int(time.time())}"
-    record = insert_lawyer_booking({
-        'booking_id': booking_id,
-        'tier_id': tier_id,
-        'tier_name': tier['name'],
-        'price': tier['price'],
-        'user_id': user['user_id'],
-        'preferred_lawyer_id': preferred_lawyer_id,
-        'customer_name': customer_name or user.get('email'),
-        'customer_phone': customer_phone,
-        'customer_email': user.get('email'),
-        'issue_description': issue_description,
-        'payment_reference': subscription['payment_reference'],
-        'status': 'awaiting_match' if not preferred_lawyer_id else 'pending_confirmation',
-        'notes': payload.get('notes'),
-        'subscription_id': subscription_id,
-    })
-
-    shortlist = list_lawyer_profiles(only_available=True, limit=3)
-    response = {
-        'message': 'Lawyer consultation booked successfully',
-        'booking': record,
-        'tier': tier,
-        'subscription_id': subscription_id,
-        'preferred_lawyer_id': preferred_lawyer_id,
-        'available_lawyers': [_public_lawyer_payload(p) for p in shortlist],
-        'next_steps': [
-            'Your booking has been confirmed using your active subscription.',
-            'You will receive a call / WhatsApp message to confirm the preferred communication mode.',
-            'The selected lawyer will join you via chat/voice/video as per the chosen plan.'
-        ]
-    }
-    return response, 200
 
 @app.route('/chat', methods=['POST'])
 def chat():
