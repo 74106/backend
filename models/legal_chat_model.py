@@ -36,7 +36,16 @@ class LegalAdviceGenerator:
         }
         
         # Base English legal prompt - will be translated to other languages
-        self.base_legal_prompt = """You are a legal AI assistant specializing in Indian law. Provide clear, practical legal advice based on Indian legal framework. Focus on:
+        self.base_legal_prompt = """You are a legal AI assistant specializing in Indian law. Provide clear, practical legal advice based on Indian legal framework.
+
+CRITICAL FORMATTING REQUIREMENT: ALWAYS format your answer in clear bullet points or numbered points. Use markdown formatting:
+- Use bullet points (- or •) for lists
+- Use numbered points (1., 2., 3.) for sequential steps
+- Use bold text (**text**) for emphasis on key terms
+- Use headers (##) for major sections
+- NEVER write long paragraphs. Break everything into points.
+
+Focus on:
 1. Relevant Indian laws and regulations (BNS, BNSS, BSA, Constitution, etc.)
 2. Practical steps the person can take
 3. Available legal remedies and procedures
@@ -51,11 +60,11 @@ IMPORTANT: Always reference the current Indian legal framework:
 
 Always cite specific laws, sections, or articles when providing legal information. If referencing criminal law, use BNS instead of IPC.
 
-Keep responses helpful, accurate, and actionable. If you're unsure about specific legal details, recommend consulting a qualified lawyer.
+Keep responses helpful, accurate, and actionable. Format everything in clear points. If you're unsure about specific legal details, recommend consulting a qualified lawyer.
 
 Question: {question}
 
-Provide legal advice:"""
+Provide legal advice in point format:"""
         
         # Base fallback response - will be translated to other languages
         self.base_fallback_response = 'I apologize, but I\'m currently unable to provide detailed legal advice. Please consult a qualified lawyer for your specific situation.'
@@ -112,18 +121,79 @@ TENANT_KEYWORDS = [
     'ଭଡ଼ାଦାର', 'ଘର ମାଲିକ'
 ]
 
+# Keywords for filing FIR (general police complaints)
 FIR_KEYWORDS = [
-    'fir', 'police', 'complaint', 'crime', 'criminal', 'arrest', 'bail', 'court',
-    'एफआईआर', 'पुलिस', 'शिकायत', 'अपराध', 'गिरफ्तार', 'जमानत', 'अदालत',
-    'এফআইআর', 'পুলিশ', 'অভিযোগ', 'অপরাধ', 'গ্রেফতার', 'জামিন', 'আদালত',
-    'எஃப்ஐஆர்', 'காவல்துறை', 'புகார்', 'குற்றம்', 'கைது', 'ஜாமீன்', 'நீதிமன்றம்',
-    'ఎఫ్ఐఆర్', 'పోలీసు', 'ఫిర్యాదు', 'నేరం', 'అరెస్టు', 'జామీను',
-    'एफआयआर', 'पोलिस', 'तक्रार', 'गुन्हा', 'गुन्हेगार', 'अटक', 'जामीन',
-    'એફઆઈઆર', 'પોલીસ', 'ફરિયાદ', 'ગુનો', 'ગુનેગાર', 'જામીન',
-    'എഫ്ഐആർ', 'പോലീസ്', 'പരാതി', 'കുറ്റം', 'അറസ്റ്റ്', 'ജാമ്യം',
-    'ਏਫਆਈਆਰ', 'ਪੁਲਿਸ', 'ਸ਼ਿਕਾਇਤ', 'ਅਪਰਾਧ', 'ਗਿਰਫਤਾਰੀ', 'ਜ਼ਮਾਨਤ',
-    'ಎಫ್ಐಆರ್', 'ಪೊಲೀಸ್', 'ದೂರು', 'ಅರೆಸ್ಟ್', 'ಜಾಮೀನು',
-    'ଏଫଆଇଆର', 'ପୋଲିସ', 'ଅଭିଯୋଗ', 'ଅପରାଧ', 'ଗିରଫତାରି', 'ଜାମିନ'
+    'fir', 'file fir', 'filing fir', 'police complaint', 'register complaint', 'police report',
+    'एफआईआर दर्ज', 'पुलिस शिकायत', 'शिकायत दर्ज',
+    'এফআইআর দায়ের', 'পুলিশ অভিযোগ',
+    'எஃப்ஐஆர் பதிவு', 'காவல்துறை புகார்',
+    'ఎఫ్ఐఆర్ నమోదు', 'పోలీసు ఫిర్యాదు',
+    'એફઆઈઆર દાખલ', 'પોલીસ ફરિયાદ',
+    'എഫ്ഐആർ രജിസ്റ്റർ', 'പോലീസ് പരാതി',
+    'ਏਫਆਈਆਰ ਦਰਜ', 'ਪੁਲਿਸ ਸ਼ਿਕਾਇਤ',
+    'ಎಫ್ಐಆರ್ ದಾಖಲೆ', 'ಪೊಲೀಸ್ ದೂರು',
+    'ଏଫଆଇଆର ଦାଖଲ', 'ପୋଲିସ ଅଭିଯୋଗ'
+]
+
+# Keywords for arrest rights (specific to rights when arrested)
+ARREST_RIGHTS_KEYWORDS = [
+    'arrest', 'arrested', 'rights if arrested', 'what are my rights', 'arrest rights', 'police arrest',
+    'गिरफ्तार', 'गिरफ्तारी', 'अधिकार', 'गिरफ्तारी के अधिकार',
+    'গ্রেফতার', 'অধিকার', 'গ্রেফতারের অধিকার',
+    'கைது', 'உரிமைகள்', 'கைது உரிமைகள்',
+    'అరెస్టు', 'అధికారాలు', 'అరెస్టు అధికారాలు',
+    'अटक', 'अधिकार', 'अटक अधिकार',
+    'અટક', 'અધિકાર', 'અટક અધિકાર',
+    'അറസ്റ്റ്', 'അവകാശങ്ങൾ', 'അറസ്റ്റ് അവകാശങ്ങൾ',
+    'ਗਿਰਫਤਾਰੀ', 'ਅਧਿਕਾਰ', 'ਗਿਰਫਤਾਰੀ ਅਧਿਕਾਰ',
+    'ಅರೆಸ್ಟ್', 'ಅಧಿಕಾರಗಳು', 'ಅರೆಸ್ಟ್ ಅಧಿಕಾರಗಳು',
+    'ଗିରଫତାରି', 'ଅଧିକାର', 'ଗିରଫତାରି ଅଧିକାର'
+]
+
+# Keywords for cybercrime (all cybercrime cases - victims, perpetrators, general questions)
+CYBERCRIME_KEYWORDS = [
+    # General cybercrime terms
+    'cybercrime', 'cyber crime', 'cyber law', 'cyber security', 'cyber attack', 'cyber offence',
+    'cyber fraud', 'online fraud', 'digital fraud', 'internet fraud', 'computer crime',
+    'victim of cybercrime', 'cybercrime victim', 'cybercrime case', 'cybercrime complaint',
+    # Specific types of cybercrime
+    'hacking', 'phishing', 'upi fraud', 'bank fraud', 'online scam', 'digital scam',
+    'identity theft', 'data breach', 'malware', 'ransomware', 'cyber stalking', 'cyber harassment',
+    'online harassment', 'sextortion', 'revenge porn', 'cyber bullying', 'social media crime',
+    'email fraud', 'credit card fraud', 'online transaction fraud', 'e-commerce fraud',
+    'it act', 'information technology act', 'it act 2000', 'cyber law india',
+    # Hindi
+    'साइबर अपराध', 'साइबर क्राइम', 'साइबर कानून', 'साइबर धोखाधड़ी', 'ऑनलाइन धोखाधड़ी',
+    'साइबर अपराध का शिकार', 'साइबर अपराध मामला', 'साइबर अपराध शिकायत',
+    'हैकिंग', 'फ़िशिंग', 'यूपीआई धोखाधड़ी', 'बैंक धोखाधड़ी', 'ऑनलाइन स्कैम',
+    'आईटी अधिनियम', 'सूचना प्रौद्योगिकी अधिनियम',
+    # Bengali
+    'সাইবার অপরাধ', 'সাইবার ক্রাইম', 'সাইবার আইন', 'অনলাইন প্রতারণা',
+    'সাইবার অপরাধের শিকার', 'সাইবার অপরাধ মামলা', 'সাইবার অপরাধ অভিযোগ',
+    # Tamil
+    'சைபர் குற்றம்', 'சைபர் சட்டம்', 'ஆன்லைன் மோசடி', 'சைபர் குற்றத்தின் பாதிக்கப்பட்டவர்',
+    'சைபர் குற்ற வழக்கு', 'சைபர் குற்ற புகார்',
+    # Telugu
+    'సైబర్ నేరం', 'సైబర్ చట్టం', 'ఆన్లైన్ మోసం', 'సైబర్ నేరం బాధితుడు',
+    'సైబర్ నేరం కేసు', 'సైబర్ నేరం ఫిర్యాదు',
+    # Marathi
+    'सायबर गुन्हा', 'सायबर कायदा', 'ऑनलाइन फसवणूक', 'सायबर गुन्हा बळी',
+    'सायबर गुन्हा केस', 'सायबर गुन्हा तक्रार',
+    # Gujarati
+    'સાયબર ગુનો', 'સાયબર કાયદો', 'ઓનલાઇન ફસાવટ', 'સાયબર ગુનો ભોગવનાર',
+    'સાયબર ગુનો કેસ', 'સાયબર ગુનો ફરિયાદ',
+    # Malayalam
+    'സൈബർ കുറ്റം', 'സൈബർ നിയമം', 'ഓൺലൈൻ തട്ടിപ്പ്', 'സൈബർ കുറ്റത്തിന്റെ ഇര',
+    'സൈബർ കുറ്റം കേസ്', 'സൈബർ കുറ്റം പരാതി',
+    # Punjabi
+    'ਸਾਈਬਰ ਅਪਰਾਧ', 'ਸਾਈਬਰ ਕਾਨੂੰਨ', 'ਔਨਲਾਈਨ ਧੋਖਾਧੜੀ', 'ਸਾਈਬਰ ਅਪਰਾਧ ਦਾ ਸ਼ਿਕਾਰ',
+    'ਸਾਈਬਰ ਅਪਰਾਧ ਕੇਸ', 'ਸਾਈਬਰ ਅਪਰਾਧ ਸ਼ਿਕਾਇਤ',
+    # Kannada
+    'ಸೈಬರ್ ಅಪರಾಧ', 'ಸೈಬರ್ ಕಾನೂನು', 'ಆನ್ಲೈನ್ ವಂಚನೆ', 'ಸೈಬರ್ ಅಪರಾಧದ ಬಲಿ',
+    'ಸೈಬರ್ ಅಪರಾಧ ಪ್ರಕರಣ', 'ಸೈಬರ್ ಅಪರಾಧ ದೂರು',
+    # Odia
+    'ସାଇବର ଅପରାଧ', 'ସାଇବର ଆଇନ', 'ଅନଲାଇନ୍ ଠକାମି', 'ସାଇବର ଅପରାଧର ବଳି',
+    'ସାଇବର ଅପରାଧ ମାମଲା', 'ସାଇବର ଅପରାଧ ଅଭିଯୋଗ'
 ]
 
 FAMILY_KEYWORDS = [
@@ -190,6 +260,84 @@ OFFLINE_RESPONSE_TEMPLATES = [
 2. Send a legal notice referencing the tenancy agreement
 3. Approach the Rent Authority / Rent Court under the Model Tenancy Act
 4. Seek injunction/interim relief if the landlord tries illegal eviction"""
+    ),
+    (
+        CYBERCRIME_KEYWORDS,
+        """**Cybercrime Law & Remedies in India - Comprehensive Guide**
+
+**If you are a victim of cybercrime:**
+
+**Immediate Steps:**
+1. **Preserve Evidence**: Save screenshots, emails, transaction records, chat logs, and any digital evidence
+2. **Report to Cyber Police**: File a complaint at your nearest cyber police station or online at cybercrime.gov.in
+3. **File e-FIR**: For cognizable cyber offences, file an e-FIR through the National Cyber Crime Reporting Portal
+4. **Contact Helpline**: Call 1930 (National Cyber Crime Helpline) for assistance
+
+**Your Rights as a Cybercrime Victim:**
+1. **Right to File Complaint**: You can file a complaint at any police station (Section 154 BNSS)
+2. **Right to Investigation**: Police must investigate cognizable offences (Section 157 BNSS)
+3. **Right to Compensation**: You may seek compensation under Section 357 BNSS
+4. **Right to Legal Aid**: Free legal aid available through Legal Services Authority
+
+**Common Cybercrime Offences & Penalties:**
+1. **Hacking** (Section 66 IT Act): Up to 3 years imprisonment and/or fine
+2. **Phishing/Fraud** (Section 66C IT Act): Up to 3 years and fine up to ₹1 lakh
+3. **Identity Theft** (Section 66C IT Act): Up to 3 years and fine
+4. **Cyber Stalking/Harassment** (Section 354D BNS): Up to 3 years and fine
+5. **Data Breach** (Section 43A IT Act): Compensation for damages
+6. **Online Fraud** (Section 420 BNS): Up to 7 years and fine
+
+**Relevant Laws:**
+- **Information Technology Act, 2000** (IT Act) - Primary cyber law
+- **Bharatiya Nyaya Sanhita (BNS), 2023** (replaces IPC) - Criminal offences
+- **Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023** (replaces CrPC) - Procedure
+- **Bharatiya Sakshya Adhiniyam (BSA), 2023** (replaces Evidence Act) - Digital evidence
+
+**Important**: Act quickly to preserve digital evidence as it can be deleted or modified. Document everything and seek legal assistance if needed."""
+    ),
+    (
+        ARREST_RIGHTS_KEYWORDS,
+        """**Your Rights if Arrested (India) - Comprehensive Guide**
+
+**Fundamental Rights When Arrested:**
+
+1. **Right to Know the Grounds**: You have the right to be informed of the grounds of arrest (Article 22(1) of Constitution, Section 50 BNSS)
+
+2. **Right to Legal Representation**: 
+   - You can consult a lawyer of your choice
+   - Right to free legal aid if you cannot afford a lawyer (Article 39A)
+   - Police must inform you of this right (Section 41D BNSS)
+
+3. **Right to Inform Family/Friend**: 
+   - You can have someone informed about your arrest (Section 41A BNSS)
+   - Police must inform a relative or friend of your choice
+
+4. **Right to Medical Examination**: 
+   - You can request medical examination if needed
+   - Mandatory for women (Section 53 BNSS)
+
+5. **Right to Bail**: 
+   - For bailable offences, bail is a right (Section 436 BNSS)
+   - For non-bailable offences, you can apply for bail (Section 437 BNSS)
+
+6. **Right Against Self-Incrimination**: 
+   - You cannot be compelled to be a witness against yourself (Article 20(3))
+   - You have the right to remain silent
+
+7. **Right to Speedy Trial**: 
+   - You have the right to a speedy and fair trial
+   - Cannot be detained indefinitely without trial
+
+**Important Legal Framework:**
+- Article 20, 21, 22 of the Constitution of India
+- Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023
+- Bharatiya Nyaya Sanhita (BNS), 2023
+
+**If Your Rights are Violated:**
+1. File a complaint with the Human Rights Commission
+2. Approach the Magistrate or High Court
+3. Seek compensation for illegal detention
+4. Contact Legal Services Authority for free legal aid"""
     ),
     (
         FIR_KEYWORDS,
@@ -301,70 +449,131 @@ def get_openai_answer(question: str, language: str = 'en', previous_cases: list[
         if not api_key:
             return "OpenAI API key not set. Set OPENAI_API_KEY environment variable."
 
-        # Fetch similar previous cases if not provided
+        # Fetch relevant court cases from Indian court databases (not local SQLite)
         if previous_cases is None:
+            previous_cases = []
             try:
-                from utils.db import fetch_chats_filtered
-                from app import _tokenize, _jaccard
-                
-                # Fetch recent chats
-                rows = fetch_chats_filtered() or []
-                q_tokens = _tokenize(question)
-                scored = []
-                
-                for r in rows[:200]:  # Check last 200 cases
+                # Search for relevant cases from Indian courts
+                api_key = os.environ.get('INDIAN_KANOON_API_KEY')
+                if api_key and requests is not None:
                     try:
-                        rq = (r.get('question') or '')
-                        ra = (r.get('answer') or '')
-                        score_q = _jaccard(q_tokens, _tokenize(rq))
-                        score_a = _jaccard(q_tokens, _tokenize(ra)) * 0.5
-                        score = score_q + score_a
-                        if score > 0:
-                            scored.append({
-                                'question': rq,
-                                'answer': ra,
-                                'timestamp': r.get('timestamp'),
-                                'score': score
+                        # Build search query from user question
+                        search_query = question[:200]  # Limit query length
+                        url = 'https://api.indiankanoon.org/search/'
+                        params = {'formInput': search_query, 'pagenum': 0}
+                        headers = {'Authorization': f'Token {api_key}'}
+                        resp = requests.get(url, params=params, headers=headers, timeout=8)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            for item in (data.get('results') or [])[:5]:  # Get top 5 cases
+                                try:
+                                    snippet = item.get('snippet') or item.get('headnote') or ''
+                                    # Summarize if too long
+                                    if len(snippet) > 300:
+                                        snippet = snippet[:300] + "..."
+                                    previous_cases.append({
+                                        'title': item.get('title') or item.get('case_title') or 'Untitled case',
+                                        'court': item.get('court') or '',
+                                        'date': item.get('judgement_date') or item.get('date') or '',
+                                        'citation': item.get('citation') or item.get('equivalent_citations') or '',
+                                        'url': item.get('url') or item.get('doc_url') or '',
+                                        'summary': snippet
+                                    })
+                                except Exception:
+                                    continue
+                    except Exception as kanoon_err:
+                        try:
+                            from app import logger
+                            logger.info(f"Indian Kanoon search failed: {kanoon_err}")
+                        except Exception:
+                            pass
+                        # Fallback to DuckDuckGo search for official court domains
+                        try:
+                            from app import _duckduckgo_search_official
+                            results = _duckduckgo_search_official(question, limit=5)
+                            for item in results:
+                                previous_cases.append({
+                                    'title': item.get('title', ''),
+                                    'court': item.get('court', ''),
+                                    'date': item.get('date', ''),
+                                    'citation': item.get('citation', ''),
+                                    'url': item.get('url', ''),
+                                    'summary': item.get('snippet', '')
+                                })
+                        except Exception as ddg_err:
+                            try:
+                                from app import logger
+                                logger.warning(f"DuckDuckGo fallback also failed: {ddg_err}")
+                            except Exception:
+                                pass
+                else:
+                    # Fallback to DuckDuckGo if API key not available
+                    try:
+                        from app import _duckduckgo_search_official
+                        results = _duckduckgo_search_official(question, limit=5)
+                        for item in results:
+                            previous_cases.append({
+                                'title': item.get('title', ''),
+                                'court': item.get('court', ''),
+                                'date': item.get('date', ''),
+                                'citation': item.get('citation', ''),
+                                'url': item.get('url', ''),
+                                'summary': item.get('snippet', '')
                             })
-                    except Exception:
-                        continue
-                
-                # Sort by score and take top 5
-                scored.sort(key=lambda x: (-x['score'], x.get('timestamp') or ''))
-                previous_cases = scored[:5]
+                    except Exception as ddg_err:
+                        try:
+                            from app import logger
+                            logger.warning(f"DuckDuckGo search failed: {ddg_err}")
+                        except Exception:
+                            pass
             except Exception as e:
                 try:
                     from app import logger
-                    logger.warning(f"Failed to fetch previous cases: {e}")
+                    logger.warning(f"Failed to fetch court cases: {e}")
                 except Exception:
                     pass
-                previous_cases = []
 
-        # Build context from previous cases
+        # Build context from previous court cases
         cases_context = ""
         if previous_cases:
-            cases_context = "\n\n**Relevant Previous Cases and Their Results:**\n"
+            cases_context = "\n\n**Relevant Indian Court Cases (from Indian court databases):**\n"
             for idx, case in enumerate(previous_cases, 1):
-                cases_context += f"\nCase {idx}:\n"
-                cases_context += f"Question: {case.get('question', 'N/A')}\n"
-                cases_context += f"Answer/Result: {case.get('answer', 'N/A')}\n"
-                if case.get('timestamp'):
-                    cases_context += f"Date: {case.get('timestamp')}\n"
-            cases_context += "\nPlease reference these previous cases when answering the user's question, especially if they ask about similar situations or outcomes.\n"
+                cases_context += f"\n**Case {idx}:**\n"
+                if case.get('title'):
+                    cases_context += f"- **Title:** {case.get('title')}\n"
+                if case.get('court'):
+                    cases_context += f"- **Court:** {case.get('court')}\n"
+                if case.get('date'):
+                    cases_context += f"- **Date:** {case.get('date')}\n"
+                if case.get('citation'):
+                    cases_context += f"- **Citation:** {case.get('citation')}\n"
+                if case.get('summary'):
+                    cases_context += f"- **Summary:** {case.get('summary')}\n"
+                if case.get('url'):
+                    cases_context += f"- **Link:** {case.get('url')}\n"
+            cases_context += "\n**IMPORTANT:** Reference these court cases in your answer. Include relevant case citations and explain how these precedents relate to the user's question. Format your answer in clear points, mentioning specific cases where relevant.\n"
 
         # Get legal prompt
         legal_prompt = legal_advisor.get_legal_prompt(question, language)
 
         # Use translated instruction based on the language
-        base_instruction = """You are a helpful legal AI for Indian law. Answer clearly and practically. Always reference current Indian legal framework (BNS, BNSS, BSA instead of IPC, CrPC, Evidence Act). Cite specific laws and sections. If unsure, advise consulting a qualified lawyer.
+        base_instruction = """You are a helpful legal AI for Indian law. Answer clearly and practically in POINT FORMAT (use bullet points or numbered lists). Always reference current Indian legal framework (BNS, BNSS, BSA instead of IPC, CrPC, Evidence Act). Cite specific laws and sections. If unsure, advise consulting a qualified lawyer.
 
-When answering questions, you have access to previous cases and their results. Use this information to:
+FORMATTING REQUIREMENTS:
+- Always format answers as bullet points (-) or numbered points (1., 2., 3.)
+- Use bold (**text**) for emphasis on important terms, laws, or sections
+- Use headers (##) for major sections
+- Keep each point concise and clear
+- Organize information in logical sections with clear headers
+- NEVER write long paragraphs. Always break information into points.
+
+When answering questions, you have access to previous court cases and their results. Use this information to:
 1. Reference similar cases and their outcomes
 2. Provide context about how similar situations were handled
 3. Explain patterns or precedents from previous cases
 4. Help users understand what to expect based on similar cases
 
-Always prioritize accuracy and cite specific laws and sections."""
+Always prioritize accuracy and cite specific laws and sections. Format everything in clear, organized points."""
         
         instruction = legal_advisor.translate_text(base_instruction, language)
 
@@ -559,16 +768,25 @@ def get_legal_advice(question: str, language: str = 'en', previous_cases: list[d
         return get_intelligent_legal_response(question, language)
 
 def get_intelligent_legal_response(question: str, language: str = 'en') -> str:
-    """Provide intelligent legal responses using curated templates."""
+    """Provide intelligent legal responses using curated templates with priority-based matching."""
     question_lower = (question or '').lower()
 
-    response = None
+    # Use priority-based matching: more specific keywords should match first
+    # Calculate match scores for each template (number of matching keywords)
+    scored_templates = []
     for keywords, template in OFFLINE_RESPONSE_TEMPLATES:
-        if any(word in question_lower for word in keywords):
-            response = template
-            break
-
-    if response is None:
+        matches = sum(1 for word in keywords if word in question_lower)
+        if matches > 0:
+            scored_templates.append((matches, template))
+    
+    # Sort by match count (descending) to prioritize templates with more keyword matches
+    scored_templates.sort(key=lambda x: x[0], reverse=True)
+    
+    # Use the template with the highest match score
+    response = None
+    if scored_templates:
+        response = scored_templates[0][1]
+    else:
         response = DEFAULT_OFFLINE_RESPONSE
 
     if language != 'en':
