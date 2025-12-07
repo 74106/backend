@@ -494,6 +494,8 @@ def _search_cases_by_court(
 @app.route('/similar_cases', methods=['POST'])
 def similar_cases():
     """Return similar past chats (cases) for a given user question.
+    
+    IMPORTANT: Only returns results for legal questions. Returns empty for identity/unrelated questions.
 
     Body: { question: string, limit?: number }
     Returns: { similar: [ { id, question, answer, language, timestamp, score } ] }
@@ -515,6 +517,14 @@ def similar_cases():
         if not question:
             return jsonify({'error': 'Question is required'}), 400
 
+        # Check if this is a legal question - if not, return empty results
+        is_legal = is_legal_question(question)
+        is_identity = is_identity_question(question)
+        
+        # Don't return similar cases for identity questions or non-legal questions
+        if not is_legal or is_identity:
+            return jsonify({'similar': []}), 200
+
         # Fetch recent chats (we can cap to last 200 for speed)
         rows = []
         try:
@@ -530,6 +540,11 @@ def similar_cases():
             try:
                 rq = (r.get('question') or '')
                 ra = (r.get('answer') or '')
+                
+                # Skip identity questions from database results too
+                if is_identity_question(rq):
+                    continue
+                
                 score_q = _jaccard(q_tokens, _tokenize(rq))
                 score_a = _jaccard(q_tokens, _tokenize(ra)) * 0.5
                 score = score_q + score_a
