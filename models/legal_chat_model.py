@@ -450,44 +450,104 @@ def get_openai_answer(question: str, language: str = 'en', previous_cases: list[
             return "OpenAI API key not set. Set OPENAI_API_KEY environment variable."
 
         # Fetch relevant court cases from Indian court databases (not local SQLite)
+        # Only fetch if previous_cases is None AND question is legal (not identity/unrelated)
         if previous_cases is None:
             previous_cases = []
+            # Check if this is a legal question before fetching cases
             try:
-                # Search for relevant cases from Indian courts
-                api_key = os.environ.get('INDIAN_KANOON_API_KEY')
-                if api_key and requests is not None:
-                    try:
-                        # Build search query from user question
-                        search_query = question[:200]  # Limit query length
-                        url = 'https://api.indiankanoon.org/search/'
-                        params = {'formInput': search_query, 'pagenum': 0}
-                        headers = {'Authorization': f'Token {api_key}'}
-                        resp = requests.get(url, params=params, headers=headers, timeout=8)
-                        if resp.status_code == 200:
-                            data = resp.json()
-                            for item in (data.get('results') or [])[:5]:  # Get top 5 cases
-                                try:
-                                    snippet = item.get('snippet') or item.get('headnote') or ''
-                                    # Summarize if too long
-                                    if len(snippet) > 300:
-                                        snippet = snippet[:300] + "..."
-                                    previous_cases.append({
-                                        'title': item.get('title') or item.get('case_title') or 'Untitled case',
-                                        'court': item.get('court') or '',
-                                        'date': item.get('judgement_date') or item.get('date') or '',
-                                        'citation': item.get('citation') or item.get('equivalent_citations') or '',
-                                        'url': item.get('url') or item.get('doc_url') or '',
-                                        'summary': snippet
-                                    })
-                                except Exception:
-                                    continue
-                    except Exception as kanoon_err:
+                from policy import is_legal_question, is_identity_question
+                is_legal = is_legal_question(question)
+                is_identity = is_identity_question(question)
+                should_fetch_cases = is_legal and not is_identity
+            except Exception:
+                # If policy functions not available, default to fetching (backward compatibility)
+                should_fetch_cases = True
+            
+            if should_fetch_cases:
+                try:
+                    # Search for relevant cases from Indian courts using RSS feeds
+                    if requests is not None:
                         try:
-                            from app import logger
-                            logger.info(f"Indian Kanoon search failed: {kanoon_err}")
-                        except Exception:
-                            pass
-                        # Fallback to DuckDuckGo search for official court domains
+                            # Use RSS feeds from Indian Kanoon
+                            from app import _parse_rss_feed
+                            rss_feeds = [
+                                'https://indiankanoon.org/feeds/sc.rss',  # Supreme Court
+                                'https://indiankanoon.org/feeds/hc.rss',  # High Courts
+                            ]
+                            
+                            for feed_url in rss_feeds[:2]:  # Limit to 2 feeds
+                                try:
+                                    feed_results = _parse_rss_feed(feed_url, limit=3)
+                                    for item in feed_results:
+                                        previous_cases.append({
+                                            'title': item.get('title', ''),
+                                            'court': item.get('court', ''),
+                                            'date': item.get('date', ''),
+                                            'citation': item.get('citation', ''),
+                                            'url': item.get('url', ''),
+                                            'summary': item.get('summary', '')
+                                        })
+                                        if len(previous_cases) >= 5:
+                                            break
+                                    if len(previous_cases) >= 5:
+                                        break
+                                except Exception as feed_err:
+                                    try:
+                                        from app import logger
+                                        logger.debug(f"RSS feed {feed_url} failed: {feed_err}")
+                                    except Exception:
+                                        pass
+                                    continue
+                            
+                            # If RSS feeds didn't return enough results, fallback to DuckDuckGo
+                            if len(previous_cases) < 3:
+                                try:
+                                    from app import _duckduckgo_search_official
+                                    results = _duckduckgo_search_official(question, limit=5)
+                                    for item in results:
+                                        previous_cases.append({
+                                            'title': item.get('title', ''),
+                                            'court': item.get('court', ''),
+                                            'date': item.get('date', ''),
+                                            'citation': item.get('citation', ''),
+                                            'url': item.get('url', ''),
+                                            'summary': item.get('snippet', '')
+                                        })
+                                        if len(previous_cases) >= 5:
+                                            break
+                                except Exception as ddg_err:
+                                    try:
+                                        from app import logger
+                                        logger.warning(f"DuckDuckGo fallback also failed: {ddg_err}")
+                                    except Exception:
+                                        pass
+                        except Exception as rss_err:
+                            try:
+                                from app import logger
+                                logger.info(f"RSS feed search failed: {rss_err}")
+                            except Exception:
+                                pass
+                            # Fallback to DuckDuckGo if RSS fails
+                            try:
+                                from app import _duckduckgo_search_official
+                                results = _duckduckgo_search_official(question, limit=5)
+                                for item in results:
+                                    previous_cases.append({
+                                        'title': item.get('title', ''),
+                                        'court': item.get('court', ''),
+                                        'date': item.get('date', ''),
+                                        'citation': item.get('citation', ''),
+                                        'url': item.get('url', ''),
+                                        'summary': item.get('snippet', '')
+                                    })
+                            except Exception as ddg_err:
+                                try:
+                                    from app import logger
+                                    logger.warning(f"DuckDuckGo search failed: {ddg_err}")
+                                except Exception:
+                                    pass
+                    else:
+                        # Fallback to DuckDuckGo if requests not available
                         try:
                             from app import _duckduckgo_search_official
                             results = _duckduckgo_search_official(question, limit=5)
@@ -503,35 +563,15 @@ def get_openai_answer(question: str, language: str = 'en', previous_cases: list[
                         except Exception as ddg_err:
                             try:
                                 from app import logger
-                                logger.warning(f"DuckDuckGo fallback also failed: {ddg_err}")
+                                logger.warning(f"DuckDuckGo search failed: {ddg_err}")
                             except Exception:
                                 pass
-                else:
-                    # Fallback to DuckDuckGo if API key not available
+                except Exception as e:
                     try:
-                        from app import _duckduckgo_search_official
-                        results = _duckduckgo_search_official(question, limit=5)
-                        for item in results:
-                            previous_cases.append({
-                                'title': item.get('title', ''),
-                                'court': item.get('court', ''),
-                                'date': item.get('date', ''),
-                                'citation': item.get('citation', ''),
-                                'url': item.get('url', ''),
-                                'summary': item.get('snippet', '')
-                            })
-                    except Exception as ddg_err:
-                        try:
-                            from app import logger
-                            logger.warning(f"DuckDuckGo search failed: {ddg_err}")
-                        except Exception:
-                            pass
-            except Exception as e:
-                try:
-                    from app import logger
-                    logger.warning(f"Failed to fetch court cases: {e}")
-                except Exception:
-                    pass
+                        from app import logger
+                        logger.warning(f"Failed to fetch court cases: {e}")
+                    except Exception:
+                        pass
 
         # Build context from previous court cases
         cases_context = ""
