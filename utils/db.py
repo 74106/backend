@@ -22,7 +22,7 @@ _db = None
 
 
 def get_mongo_client():
-    """Get or create MongoDB client connection."""
+    """Get or create MongoDB client connection. Returns None if connection fails."""
     global _client
     if _client is None:
         try:
@@ -30,25 +30,36 @@ def get_mongo_client():
             # Test connection
             _client.admin.command('ping')
             logger.info(f"Connected to MongoDB at {MONGO_URI}")
-        except ConnectionFailure as e:
-            logger.error(f"Failed to connect to MongoDB: {e}")
-            raise
+        except Exception as e:
+            logger.warning(f"MongoDB connection failed: {e}. The app will continue but database operations will fail.")
+            logger.info("To fix: Install MongoDB locally or set MONGODB_URI environment variable to a MongoDB connection string.")
+            _client = None
     return _client
 
 
 def get_db():
-    """Get MongoDB database instance."""
+    """Get MongoDB database instance. Returns None if connection is not available."""
     global _db
     if _db is None:
         client = get_mongo_client()
+        if client is None:
+            return None
         _db = client[MONGO_DB_NAME]
     return _db
 
 
 def init_db() -> None:
-    """Initialize MongoDB database with required collections and indexes."""
+    """Initialize MongoDB database with required collections and indexes.
+    Does not raise exceptions - logs warnings if MongoDB is unavailable."""
     try:
         db = get_db()
+        if db is None:
+            logger.warning("MongoDB is not available. Database operations will fail until MongoDB is connected.")
+            logger.info("To connect MongoDB:")
+            logger.info("  1. Install MongoDB locally: https://www.mongodb.com/try/download/community")
+            logger.info("  2. Or use MongoDB Atlas (cloud): https://www.mongodb.com/cloud/atlas")
+            logger.info("  3. Set MONGODB_URI environment variable: export MONGODB_URI='mongodb://localhost:27017/'")
+            return
         
         # Create collections (MongoDB creates them automatically on first insert)
         collections = [
@@ -62,22 +73,25 @@ def init_db() -> None:
                 logger.info(f"Created collection: {collection_name}")
         
         # Create indexes
-        db.users.create_index("email", unique=True)
-        db.users.create_index("is_verified")
-        db.lawyer_profiles.create_index("email", unique=True, sparse=True)
-        db.lawyer_profiles.create_index("phone", unique=True, sparse=True)
-        db.subscription_purchases.create_index("subscription_id", unique=True)
-        db.subscription_purchases.create_index("user_id")
-        db.subscription_purchases.create_index("status")
-        db.lawyer_bookings.create_index("booking_id", unique=True)
-        db.lawyer_bookings.create_index("subscription_id")
-        db.chats.create_index("timestamp")
-        db.forms.create_index("timestamp")
+        try:
+            db.users.create_index("email", unique=True)
+            db.users.create_index("is_verified")
+            db.lawyer_profiles.create_index("email", unique=True, sparse=True)
+            db.lawyer_profiles.create_index("phone", unique=True, sparse=True)
+            db.subscription_purchases.create_index("subscription_id", unique=True)
+            db.subscription_purchases.create_index("user_id")
+            db.subscription_purchases.create_index("status")
+            db.lawyer_bookings.create_index("booking_id", unique=True)
+            db.lawyer_bookings.create_index("subscription_id")
+            db.chats.create_index("timestamp")
+            db.forms.create_index("timestamp")
+        except Exception as idx_err:
+            logger.warning(f"Some indexes may already exist: {idx_err}")
         
         logger.info("MongoDB database initialized successfully")
     except Exception as e:
-        logger.error(f"Failed to initialize MongoDB: {e}")
-        raise
+        logger.warning(f"MongoDB initialization failed (non-fatal): {e}")
+        logger.info("The app will continue but database operations will fail until MongoDB is available.")
 
 
 def insert_chat(
@@ -88,6 +102,9 @@ def insert_chat(
 ) -> str:
     """Insert a chat record and return its new id."""
     db = get_db()
+    if db is None:
+        logger.warning("MongoDB not available - chat not saved")
+        return "0"
     chat_doc = {
         "question": question,
         "answer": answer,
@@ -106,6 +123,9 @@ def insert_form(
 ) -> str:
     """Insert a form record and return its new id."""
     db = get_db()
+    if db is None:
+        logger.warning("MongoDB not available - form not saved")
+        return "0"
     form_doc = {
         "form_type": form_type,
         "form_text": form_text,
@@ -119,6 +139,8 @@ def insert_form(
 def fetch_all_chats() -> List[Dict[str, Any]]:
     """Fetch all chat records, newest first."""
     db = get_db()
+    if db is None:
+        return []
     chats = db.chats.find().sort("timestamp", -1)
     result = []
     for chat in chats:
@@ -131,6 +153,8 @@ def fetch_all_chats() -> List[Dict[str, Any]]:
 def fetch_all_forms() -> List[Dict[str, Any]]:
     """Fetch all form records, newest first."""
     db = get_db()
+    if db is None:
+        return []
     forms = db.forms.find().sort("timestamp", -1)
     result = []
     for form in forms:
@@ -155,6 +179,8 @@ def fetch_chats_filtered(
     The similar_cases endpoint should use external sources (RSS feeds) instead of MongoDB data.
     """
     db = get_db()
+    if db is None:
+        return []
     query = {}
     
     if start:
@@ -189,6 +215,8 @@ def fetch_forms_filtered(
 ) -> List[Dict[str, Any]]:
     """Fetch forms with optional filters: start/end ISO timestamp, form_type, text query."""
     db = get_db()
+    if db is None:
+        return []
     query = {}
     
     if start:
@@ -223,6 +251,8 @@ def fetch_recent_chats(
 ) -> List[Dict[str, Any]]:
     """Fetch the latest chat records to showcase past resolved cases."""
     db = get_db()
+    if db is None:
+        return []
     chats = db.chats.find().sort("timestamp", -1).limit(min(max(1, limit), 50))
     result = []
     for chat in chats:
@@ -240,6 +270,8 @@ def create_user(
     created_at: str,
 ) -> str:
     db = get_db()
+    if db is None:
+        raise RuntimeError("MongoDB is not available. Please configure MONGODB_URI environment variable.")
     user_doc = {
         "email": email.lower(),
         "password_hash": password_hash,
@@ -254,6 +286,8 @@ def create_user(
 
 def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
     db = get_db()
+    if db is None:
+        return None
     user = db.users.find_one({"email": email.lower()})
     if user:
         user["id"] = str(user["_id"])
@@ -264,6 +298,8 @@ def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
 
 def get_user_by_verification_token(token: str) -> Optional[Dict[str, Any]]:
     db = get_db()
+    if db is None:
+        return None
     user = db.users.find_one({"verification_token": token})
     if user:
         user["id"] = str(user["_id"])
@@ -274,6 +310,9 @@ def get_user_by_verification_token(token: str) -> Optional[Dict[str, Any]]:
 
 def set_user_verified(user_id: str, verified_at: str) -> None:
     db = get_db()
+    if db is None:
+        logger.warning("MongoDB not available - user verification not saved")
+        return
     from bson import ObjectId
     db.users.update_one(
         {"_id": ObjectId(user_id)},
@@ -288,6 +327,9 @@ def set_user_verified(user_id: str, verified_at: str) -> None:
 def set_verification_token(user_id: str, token: str) -> None:
     """Set or replace a user's verification token (used for resend flows)."""
     db = get_db()
+    if db is None:
+        logger.warning("MongoDB not available - verification token not saved")
+        return
     from bson import ObjectId
     db.users.update_one(
         {"_id": ObjectId(user_id)},
@@ -308,6 +350,8 @@ def _safe_json_dump(value: Any) -> str:
 
 def get_lawyer_profile_by_id(lawyer_id: str) -> Optional[Dict[str, Any]]:
     db = get_db()
+    if db is None:
+        return None
     from bson import ObjectId
     try:
         lawyer = db.lawyer_profiles.find_one({"_id": ObjectId(lawyer_id)})
@@ -336,6 +380,8 @@ def create_subscription_purchase(
 ) -> Dict[str, Any]:
     """Create a new subscription purchase and return it."""
     db = get_db()
+    if db is None:
+        raise RuntimeError("MongoDB is not available. Please configure MONGODB_URI environment variable.")
     now = _now_iso()
     subscription_id = f"SUB_{int(time.time())}_{secrets.token_hex(4)}"
     
@@ -370,6 +416,8 @@ def get_subscription_purchase(
 ) -> Optional[Dict[str, Any]]:
     """Get a subscription purchase by its database id (MongoDB ObjectId as string or int)."""
     db = get_db()
+    if db is None:
+        return None
     from bson import ObjectId
     try:
         # Try to convert to ObjectId if it's a string, otherwise use as int
@@ -404,6 +452,8 @@ def get_user_subscriptions(
 ) -> List[Dict[str, Any]]:
     """Get all subscriptions for a user, optionally filtered by status."""
     db = get_db()
+    if db is None:
+        return []
     # MongoDB stores user_id as int, so we can query directly
     query = {"user_id": int(user_id)}
     if status:
@@ -423,6 +473,8 @@ def list_lawyer_profiles(
     limit: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     db = get_db()
+    if db is None:
+        return []
     query = {}
     if only_available:
         query["is_available"] = 1
@@ -446,6 +498,9 @@ def set_lawyer_availability(
     status: Optional[str] = None,
 ) -> None:
     db = get_db()
+    if db is None:
+        logger.warning("MongoDB not available - lawyer availability not updated")
+        return
     from bson import ObjectId
     updates = {}
     if is_available is not None:
@@ -464,6 +519,8 @@ def insert_lawyer_booking(
     booking: Dict[str, Any],
 ) -> Dict[str, Any]:
     db = get_db()
+    if db is None:
+        raise RuntimeError("MongoDB is not available. Please configure MONGODB_URI environment variable.")
     now = _now_iso()
     
     booking_doc = {
