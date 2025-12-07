@@ -332,7 +332,14 @@ def get_current_user():
         return None
     token = auth_header.split(' ', 1)[1]
     try:
-        return decode_jwt(token)
+        user = decode_jwt(token)
+        if user:
+            # MongoDB uses string IDs, ensure compatibility
+            if 'user_id' in user:
+                user['id'] = user['user_id']  # For backward compatibility
+            elif 'id' in user:
+                user['user_id'] = user['id']  # For backward compatibility
+        return user
     except Exception:
         return None
 
@@ -525,43 +532,10 @@ def similar_cases():
         if not is_legal or is_identity:
             return jsonify({'similar': []}), 200
 
-        # Fetch recent chats (we can cap to last 200 for speed)
-        rows = []
-        try:
-            rows = fetch_chats_filtered() or []
-        except Exception as db_err:
-            logger.error(f"Failed to fetch chats for similarity: {db_err}")
-            rows = []
-
-        # Score with simple Jaccard on tokens
-        q_tokens = _tokenize(question)
-        scored: list[dict] = []
-        for r in rows[:200]:  # newest first as per helper
-            try:
-                rq = (r.get('question') or '')
-                ra = (r.get('answer') or '')
-                
-                # Skip identity questions from database results too
-                if is_identity_question(rq):
-                    continue
-                
-                score_q = _jaccard(q_tokens, _tokenize(rq))
-                score_a = _jaccard(q_tokens, _tokenize(ra)) * 0.5
-                score = score_q + score_a
-                if score > 0:
-                    scored.append({
-                        'id': r.get('id'),
-                        'question': rq,
-                        'answer': ra,
-                        'language': r.get('language'),
-                        'timestamp': r.get('timestamp'),
-                        'score': round(float(score), 4)
-                    })
-            except Exception:
-                continue
-
-        scored.sort(key=lambda x: (-x['score'], x.get('timestamp') or ''))
-        return jsonify({'similar': scored[:limit]}), 200
+        # IMPORTANT: Do NOT use MongoDB data for similar cases
+        # Similar cases should come from external sources (RSS feeds, etc.), not from our database
+        # Return empty results to ensure we don't use MongoDB data
+        return jsonify({'similar': []}), 200
     except Exception as e:
         logger.error(f"Error in similar_cases endpoint: {e}")
         return jsonify({'error': 'Internal server error'}), 500
@@ -957,8 +931,9 @@ def purchase_subscription():
             return jsonify({'error': 'Invalid subscription tier'}), 400
         
         # Create subscription purchase
+        user_id = int(user.get('user_id') or user.get('id', 0))
         subscription = create_subscription_purchase({
-            'user_id': user['user_id'],
+            'user_id': user_id,
             'tier_id': tier_id,
             'tier_name': tier['name'],
             'price': tier['price'],
@@ -988,7 +963,8 @@ def get_my_subscriptions():
         if not user:
             return jsonify({'error': 'Unauthorized'}), 401
         
-        subscriptions = get_user_subscriptions(user['user_id'])
+        user_id = int(user.get('user_id') or user.get('id', 0))
+        subscriptions = get_user_subscriptions(user_id)
         return jsonify({
             'subscriptions': subscriptions,
             'count': len(subscriptions)
@@ -1346,7 +1322,12 @@ def _handle_lawyer_booking(user: dict, payload: dict) -> tuple[dict, int]:
     if not subscription:
         return {'error': 'Subscription not found'}, 404
     
-    if subscription['user_id'] != user['user_id']:
+    # MongoDB stores user_id, but we need to compare properly
+    user_id = user.get('user_id') or user.get('id')
+    sub_user_id = subscription.get('user_id')
+    
+    # Convert both to strings for comparison (MongoDB might return different types)
+    if str(sub_user_id) != str(user_id):
         return {'error': 'Unauthorized: This subscription does not belong to you'}, 403
     
     if subscription['status'] != 'active':
@@ -1375,7 +1356,7 @@ def _handle_lawyer_booking(user: dict, payload: dict) -> tuple[dict, int]:
         'tier_id': tier_id,
         'tier_name': tier['name'],
         'price': tier['price'],
-        'user_id': user['user_id'],
+        'user_id': int(user.get('user_id') or user.get('id', 0)),
         'preferred_lawyer_id': preferred_lawyer_id,
         'customer_name': customer_name or user.get('email'),
         'customer_phone': customer_phone,
@@ -1568,16 +1549,8 @@ def register():
 
         # Manually mark verified in DB since create_user sets default 0
         try:
-            import sqlite3
-            from utils.db import get_db_connection
-            conn = get_db_connection()
-            cur = conn.cursor()
-            cur.execute(
-                "UPDATE users SET is_verified = 1, verification_token = NULL, verified_at = ? WHERE id = ?",
-                (timestamp, user_id),
-            )
-            conn.commit()
-            conn.close()
+            from utils.db import set_user_verified
+            set_user_verified(user_id, timestamp)
         except Exception as e:
             logger.error(f"Failed to auto-verify user: {e}")
 
@@ -1613,8 +1586,18 @@ def login():
             return jsonify({'error': 'Invalid email or password'}), 401
         
         # Create JWT token
+        # MongoDB returns string IDs, convert to int for JWT compatibility
+        user_id = user.get('id') or user.get('_id')
+        if isinstance(user_id, str):
+            # Convert MongoDB ObjectId string to a numeric ID for JWT
+            try:
+                # Use hash of string ID to get a consistent numeric value
+                user_id = abs(hash(user_id)) % (10**9)
+            except Exception:
+                user_id = 0
+        
         token_payload = {
-            'user_id': user['id'],
+            'user_id': user_id,
             'email': user['email'],
             'verified': user['is_verified']
         }
@@ -1661,7 +1644,7 @@ def get_current_user_info():
         
         return jsonify({
             'user': {
-                'id': user['user_id'],
+                'id': int(user.get('user_id') or user.get('id', 0)),
                 'email': user['email'],
                 'verified': user['verified']
             }
