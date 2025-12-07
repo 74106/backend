@@ -1,227 +1,83 @@
 import os
 import json
-import sqlite3
 import time
 import secrets
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+from pymongo import MongoClient
+from pymongo.errors import ConnectionFailure, OperationFailure
+import logging
 
-# Resolve database path. Defaults to a file next to the backend folder.
-_DEFAULT_DB_PATH = os.environ.get(
-    "NYAYSETU_DB_PATH",
-    os.path.join(os.path.dirname(os.path.dirname(__file__)), "nyaysetu.db"),
+logger = logging.getLogger(__name__)
+
+# MongoDB connection configuration
+MONGO_URI = os.environ.get(
+    "MONGODB_URI",
+    os.environ.get("MONGO_URI", "mongodb://localhost:27017/")
 )
+MONGO_DB_NAME = os.environ.get("MONGODB_DB_NAME", "nyaysetu")
+
+_client = None
+_db = None
 
 
-def get_db_connection(db_path: str = _DEFAULT_DB_PATH) -> sqlite3.Connection:
-    """Return a SQLite connection with Row factory for dict-like access."""
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    return conn
+def get_mongo_client():
+    """Get or create MongoDB client connection."""
+    global _client
+    if _client is None:
+        try:
+            _client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+            # Test connection
+            _client.admin.command('ping')
+            logger.info(f"Connected to MongoDB at {MONGO_URI}")
+        except ConnectionFailure as e:
+            logger.error(f"Failed to connect to MongoDB: {e}")
+            raise
+    return _client
 
 
-def init_db(db_path: str = _DEFAULT_DB_PATH) -> None:
-    """Initialize database with required tables if they don't exist."""
-    import logging
-    logger = logging.getLogger(__name__)
-    
-    conn = get_db_connection(db_path)
+def get_db():
+    """Get MongoDB database instance."""
+    global _db
+    if _db is None:
+        client = get_mongo_client()
+        _db = client[MONGO_DB_NAME]
+    return _db
+
+
+def init_db() -> None:
+    """Initialize MongoDB database with required collections and indexes."""
     try:
-        cur = conn.cursor()
-        # Chats table
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS chats (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                question TEXT NOT NULL,
-                answer TEXT NOT NULL,
-                language TEXT NOT NULL,
-                timestamp TEXT NOT NULL
-            )
-            """
-        )
-        # Forms table
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS forms (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                form_type TEXT NOT NULL,
-                form_text TEXT NOT NULL,
-                responses_json TEXT NOT NULL,
-                timestamp TEXT NOT NULL
-            )
-            """
-        )
-        # Users table
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT NOT NULL UNIQUE,
-                password_hash TEXT NOT NULL,
-                is_verified INTEGER NOT NULL DEFAULT 0,
-                verification_token TEXT,
-                created_at TEXT NOT NULL,
-                verified_at TEXT
-            )
-            """
-        )
-        # Indexes for users - wrap in try/except to handle schema mismatches
-        try:
-            cur.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)
-                """
-            )
-        except Exception as e:
-            logger.debug(f"Index idx_users_email may already exist or table schema mismatch: {e}")
-        try:
-            cur.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_users_verified ON users(is_verified)
-                """
-            )
-        except Exception as e:
-            logger.debug(f"Index idx_users_verified may already exist or table schema mismatch: {e}")
-        # Lawyer profiles table
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS lawyer_profiles (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                full_name TEXT NOT NULL,
-                specialization TEXT NOT NULL,
-                experience_years INTEGER DEFAULT 0,
-                qualification TEXT,
-                bio TEXT,
-                languages TEXT,
-                phone TEXT,
-                email TEXT,
-                hourly_rate INTEGER,
-                location TEXT,
-                availability_json TEXT,
-                communication_json TEXT,
-                consultation_modes_json TEXT,
-                status TEXT NOT NULL DEFAULT 'available',
-                is_available INTEGER NOT NULL DEFAULT 1,
-                rating REAL DEFAULT 4.8,
-                cases_handled INTEGER DEFAULT 0,
-                photo_url TEXT,
-                video_link TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )
-            """
-        )
-        try:
-            cur.execute(
-                """
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_lawyer_profiles_email
-                ON lawyer_profiles (lower(email))
-                WHERE email IS NOT NULL
-                """
-            )
-        except Exception as e:
-            logger.debug(f"Index idx_lawyer_profiles_email may already exist or table schema mismatch: {e}")
-        try:
-            cur.execute(
-                """
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_lawyer_profiles_phone
-                ON lawyer_profiles (phone)
-                WHERE phone IS NOT NULL
-                """
-            )
-        except Exception as e:
-            logger.debug(f"Index idx_lawyer_profiles_phone may already exist or table schema mismatch: {e}")
-        # Subscription purchases table
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS subscription_purchases (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                subscription_id TEXT NOT NULL UNIQUE,
-                user_id INTEGER NOT NULL,
-                tier_id TEXT NOT NULL,
-                tier_name TEXT NOT NULL,
-                price INTEGER NOT NULL,
-                payment_reference TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'active',
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES users(id)
-            )
-            """
-        )
-        try:
-            cur.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_subscription_purchases_user_id
-                ON subscription_purchases (user_id)
-                """
-            )
-        except Exception as e:
-            logger.debug(f"Index idx_subscription_purchases_user_id may already exist or table schema mismatch: {e}")
-        try:
-            cur.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_subscription_purchases_subscription_id
-                ON subscription_purchases (subscription_id)
-                """
-            )
-        except Exception as e:
-            logger.debug(f"Index idx_subscription_purchases_subscription_id may already exist or table schema mismatch: {e}")
-        try:
-            cur.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_subscription_purchases_status
-                ON subscription_purchases (status)
-                """
-            )
-        except Exception as e:
-            logger.debug(f"Index idx_subscription_purchases_status may already exist or table schema mismatch: {e}")
-        # Lawyer bookings table
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS lawyer_bookings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                booking_id TEXT NOT NULL,
-                tier_id TEXT NOT NULL,
-                tier_name TEXT,
-                price INTEGER NOT NULL,
-                user_id INTEGER,
-                preferred_lawyer_id INTEGER,
-                customer_name TEXT,
-                customer_phone TEXT,
-                customer_email TEXT,
-                issue_description TEXT,
-                payment_reference TEXT,
-                subscription_id INTEGER,
-                status TEXT NOT NULL DEFAULT 'pending',
-                notes TEXT,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (preferred_lawyer_id) REFERENCES lawyer_profiles(id),
-                FOREIGN KEY (subscription_id) REFERENCES subscription_purchases(id)
-            )
-            """
-        )
-        try:
-            cur.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_lawyer_bookings_booking_id
-                ON lawyer_bookings (booking_id)
-                """
-            )
-        except Exception as e:
-            logger.debug(f"Index idx_lawyer_bookings_booking_id may already exist or table schema mismatch: {e}")
-        try:
-            cur.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_lawyer_bookings_subscription_id
-                ON lawyer_bookings (subscription_id)
-                """
-            )
-        except Exception as e:
-            logger.debug(f"Index idx_lawyer_bookings_subscription_id may already exist or table schema mismatch: {e}")
-        conn.commit()
-    finally:
-        conn.close()
+        db = get_db()
+        
+        # Create collections (MongoDB creates them automatically on first insert)
+        collections = [
+            'chats', 'forms', 'users', 'lawyer_profiles', 
+            'subscription_purchases', 'lawyer_bookings'
+        ]
+        
+        for collection_name in collections:
+            if collection_name not in db.list_collection_names():
+                db.create_collection(collection_name)
+                logger.info(f"Created collection: {collection_name}")
+        
+        # Create indexes
+        db.users.create_index("email", unique=True)
+        db.users.create_index("is_verified")
+        db.lawyer_profiles.create_index("email", unique=True, sparse=True)
+        db.lawyer_profiles.create_index("phone", unique=True, sparse=True)
+        db.subscription_purchases.create_index("subscription_id", unique=True)
+        db.subscription_purchases.create_index("user_id")
+        db.subscription_purchases.create_index("status")
+        db.lawyer_bookings.create_index("booking_id", unique=True)
+        db.lawyer_bookings.create_index("subscription_id")
+        db.chats.create_index("timestamp")
+        db.forms.create_index("timestamp")
+        
+        logger.info("MongoDB database initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize MongoDB: {e}")
+        raise
 
 
 def insert_chat(
@@ -229,20 +85,17 @@ def insert_chat(
     answer: str,
     language: str,
     timestamp: str,
-    db_path: str = _DEFAULT_DB_PATH,
-) -> int:
+) -> str:
     """Insert a chat record and return its new id."""
-    conn = get_db_connection(db_path)
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO chats (question, answer, language, timestamp) VALUES (?, ?, ?, ?)",
-            (question, answer, language, timestamp),
-        )
-        conn.commit()
-        return int(cur.lastrowid) # pyright: ignore[reportArgumentType]
-    finally:
-        conn.close()
+    db = get_db()
+    chat_doc = {
+        "question": question,
+        "answer": answer,
+        "language": language,
+        "timestamp": timestamp
+    }
+    result = db.chats.insert_one(chat_doc)
+    return str(result.inserted_id)
 
 
 def insert_form(
@@ -250,44 +103,44 @@ def insert_form(
     form_text: str,
     responses: Dict[str, Any],
     timestamp: str,
-    db_path: str = _DEFAULT_DB_PATH,
-) -> int:
+) -> str:
     """Insert a form record and return its new id."""
-    conn = get_db_connection(db_path)
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO forms (form_type, form_text, responses_json, timestamp) VALUES (?, ?, ?, ?)",
-            (form_type, form_text, json.dumps(responses, ensure_ascii=False), timestamp),
-        )
-        conn.commit()
-        return int(cur.lastrowid) # pyright: ignore[reportArgumentType]
-    finally:
-        conn.close()
+    db = get_db()
+    form_doc = {
+        "form_type": form_type,
+        "form_text": form_text,
+        "responses": responses,  # MongoDB stores dicts natively
+        "timestamp": timestamp
+    }
+    result = db.forms.insert_one(form_doc)
+    return str(result.inserted_id)
 
 
-def fetch_all_chats(db_path: str = _DEFAULT_DB_PATH) -> List[Dict[str, Any]]:
+def fetch_all_chats() -> List[Dict[str, Any]]:
     """Fetch all chat records, newest first."""
-    conn = get_db_connection(db_path)
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT id, question, answer, language, timestamp FROM chats ORDER BY timestamp DESC, id DESC")
-        rows = cur.fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        conn.close()
+    db = get_db()
+    chats = db.chats.find().sort("timestamp", -1)
+    result = []
+    for chat in chats:
+        chat["id"] = str(chat["_id"])
+        del chat["_id"]
+        result.append(chat)
+    return result
 
 
-def fetch_all_forms(db_path: str = _DEFAULT_DB_PATH) -> List[Dict[str, Any]]:
+def fetch_all_forms() -> List[Dict[str, Any]]:
     """Fetch all form records, newest first."""
-    conn = get_db_connection(db_path)
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT id, form_type, form_text, responses_json, timestamp FROM forms ORDER BY timestamp DESC, id DESC")
-        rows = cur.fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        conn.close()
+    db = get_db()
+    forms = db.forms.find().sort("timestamp", -1)
+    result = []
+    for form in forms:
+        form["id"] = str(form["_id"])
+        del form["_id"]
+        # Convert responses dict back to JSON string for compatibility
+        if "responses" in form and isinstance(form["responses"], dict):
+            form["responses_json"] = json.dumps(form["responses"], ensure_ascii=False)
+        result.append(form)
+    return result
 
 
 def fetch_chats_filtered(
@@ -295,39 +148,37 @@ def fetch_chats_filtered(
     end: Optional[str] = None,
     language: Optional[str] = None,
     q: Optional[str] = None,
-    db_path: str = _DEFAULT_DB_PATH,
 ) -> List[Dict[str, Any]]:
-    """Fetch chats with optional filters: start/end ISO timestamp, language, text query."""
-    conn = get_db_connection(db_path)
-    try:
-        conditions = []
-        params: List[Any] = []
-        if start:
-            conditions.append("timestamp >= ?") # pyright: ignore[reportUnknownMemberType]
-            params.append(start)
-        if end:
-            conditions.append("timestamp <= ?") # pyright: ignore[reportUnknownMemberType]
-            params.append(end)
-        if language:
-            conditions.append("language = ?") # pyright: ignore[reportUnknownMemberType]
-            params.append(language)
-        if q:
-            conditions.append("(question LIKE ? OR answer LIKE ?)") # pyright: ignore[reportUnknownMemberType]
-            like = f"%{q}%"
-            params.extend([like, like])
-
-        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else "" # pyright: ignore[reportUnknownArgumentType]
-        sql = (
-            "SELECT id, question, answer, language, timestamp FROM chats "
-            + where_clause
-            + " ORDER BY timestamp DESC, id DESC"
-        )
-        cur = conn.cursor()
-        cur.execute(sql, params)
-        rows = cur.fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        conn.close()
+    """Fetch chats with optional filters: start/end ISO timestamp, language, text query.
+    
+    NOTE: This function is kept for compatibility but should NOT be used for similar_cases.
+    The similar_cases endpoint should use external sources (RSS feeds) instead of MongoDB data.
+    """
+    db = get_db()
+    query = {}
+    
+    if start:
+        query["timestamp"] = {"$gte": start}
+    if end:
+        if "timestamp" in query:
+            query["timestamp"]["$lte"] = end
+        else:
+            query["timestamp"] = {"$lte": end}
+    if language:
+        query["language"] = language
+    if q:
+        query["$or"] = [
+            {"question": {"$regex": q, "$options": "i"}},
+            {"answer": {"$regex": q, "$options": "i"}}
+        ]
+    
+    chats = db.chats.find(query).sort("timestamp", -1)
+    result = []
+    for chat in chats:
+        chat["id"] = str(chat["_id"])
+        del chat["_id"]
+        result.append(chat)
+    return result
 
 
 def fetch_forms_filtered(
@@ -335,64 +186,50 @@ def fetch_forms_filtered(
     end: Optional[str] = None,
     form_type: Optional[str] = None,
     q: Optional[str] = None,
-    db_path: str = _DEFAULT_DB_PATH,
 ) -> List[Dict[str, Any]]:
     """Fetch forms with optional filters: start/end ISO timestamp, form_type, text query."""
-    conn = get_db_connection(db_path)
-    try:
-        conditions = []
-        params: List[Any] = []
-        if start:
-            conditions.append("timestamp >= ?") # pyright: ignore[reportUnknownMemberType]
-            params.append(start)
-        if end:
-            conditions.append("timestamp <= ?") # pyright: ignore[reportUnknownMemberType]
-            params.append(end)
-        if form_type:
-            conditions.append("form_type = ?") # pyright: ignore[reportUnknownMemberType]
-            params.append(form_type)
-        if q:
-            conditions.append("(form_text LIKE ? OR responses_json LIKE ?)") # pyright: ignore[reportUnknownMemberType]
-            like = f"%{q}%"
-            params.extend([like, like])
-
-        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else "" # pyright: ignore[reportUnknownArgumentType]
-        sql = (
-            "SELECT id, form_type, form_text, responses_json, timestamp FROM forms "
-            + where_clause
-            + " ORDER BY timestamp DESC, id DESC"
-        )
-        cur = conn.cursor()
-        cur.execute(sql, params)
-        rows = cur.fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        conn.close()
+    db = get_db()
+    query = {}
+    
+    if start:
+        query["timestamp"] = {"$gte": start}
+    if end:
+        if "timestamp" in query:
+            query["timestamp"]["$lte"] = end
+        else:
+            query["timestamp"] = {"$lte": end}
+    if form_type:
+        query["form_type"] = form_type
+    if q:
+        query["$or"] = [
+            {"form_text": {"$regex": q, "$options": "i"}},
+            {"responses": {"$regex": q, "$options": "i"}}
+        ]
+    
+    forms = db.forms.find(query).sort("timestamp", -1)
+    result = []
+    for form in forms:
+        form["id"] = str(form["_id"])
+        del form["_id"]
+        # Convert responses dict back to JSON string for compatibility
+        if "responses" in form and isinstance(form["responses"], dict):
+            form["responses_json"] = json.dumps(form["responses"], ensure_ascii=False)
+        result.append(form)
+    return result
 
 
-# Recently resolved chats -----------------------------------------------------
 def fetch_recent_chats(
     limit: int = 5,
-    db_path: str = _DEFAULT_DB_PATH,
 ) -> List[Dict[str, Any]]:
     """Fetch the latest chat records to showcase past resolved cases."""
-    conn = get_db_connection(db_path)
-    try:
-        clamp_limit = max(1, min(int(limit or 5), 50))
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT id, question, answer, language, timestamp
-            FROM chats
-            ORDER BY timestamp DESC, id DESC
-            LIMIT ?
-            """,
-            (clamp_limit,),
-        )
-        rows = cur.fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        conn.close()
+    db = get_db()
+    chats = db.chats.find().sort("timestamp", -1).limit(min(max(1, limit), 50))
+    result = []
+    for chat in chats:
+        chat["id"] = str(chat["_id"])
+        del chat["_id"]
+        result.append(chat)
+    return result
 
 
 # Users helpers
@@ -401,77 +238,64 @@ def create_user(
     password_hash: str,
     verification_token: Optional[str],
     created_at: str,
-    db_path: str = _DEFAULT_DB_PATH,
-) -> int:
-    conn = get_db_connection(db_path)
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO users (email, password_hash, is_verified, verification_token, created_at) VALUES (?, ?, 0, ?, ?)",
-            (email, password_hash, verification_token, created_at),
-        )
-        conn.commit()
-        return int(cur.lastrowid) # pyright: ignore[reportArgumentType]
-    finally:
-        conn.close()
+) -> str:
+    db = get_db()
+    user_doc = {
+        "email": email.lower(),
+        "password_hash": password_hash,
+        "is_verified": 0,
+        "verification_token": verification_token,
+        "created_at": created_at,
+        "verified_at": None
+    }
+    result = db.users.insert_one(user_doc)
+    return str(result.inserted_id)
 
 
-def get_user_by_email(email: str, db_path: str = _DEFAULT_DB_PATH) -> Optional[Dict[str, Any]]:
-    conn = get_db_connection(db_path)
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT id, email, password_hash, is_verified, verification_token, created_at, verified_at FROM users WHERE email = ?",
-            (email,),
-        )
-        row = cur.fetchone()
-        return dict(row) if row else None
-    finally:
-        conn.close()
+def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    db = get_db()
+    user = db.users.find_one({"email": email.lower()})
+    if user:
+        user["id"] = str(user["_id"])
+        del user["_id"]
+        return user
+    return None
 
 
-def get_user_by_verification_token(token: str, db_path: str = _DEFAULT_DB_PATH) -> Optional[Dict[str, Any]]:
-    conn = get_db_connection(db_path)
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT id, email, password_hash, is_verified, verification_token, created_at, verified_at FROM users WHERE verification_token = ?",
-            (token,),
-        )
-        row = cur.fetchone()
-        return dict(row) if row else None
-    finally:
-        conn.close()
+def get_user_by_verification_token(token: str) -> Optional[Dict[str, Any]]:
+    db = get_db()
+    user = db.users.find_one({"verification_token": token})
+    if user:
+        user["id"] = str(user["_id"])
+        del user["_id"]
+        return user
+    return None
 
 
-def set_user_verified(user_id: int, verified_at: str, db_path: str = _DEFAULT_DB_PATH) -> None:
-    conn = get_db_connection(db_path)
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            "UPDATE users SET is_verified = 1, verification_token = NULL, verified_at = ? WHERE id = ?",
-            (verified_at, user_id),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+def set_user_verified(user_id: str, verified_at: str) -> None:
+    db = get_db()
+    from bson import ObjectId
+    db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {
+            "is_verified": 1,
+            "verification_token": None,
+            "verified_at": verified_at
+        }}
+    )
 
 
-def set_verification_token(user_id: int, token: str, db_path: str = _DEFAULT_DB_PATH) -> None:
+def set_verification_token(user_id: str, token: str) -> None:
     """Set or replace a user's verification token (used for resend flows)."""
-    conn = get_db_connection(db_path)
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            "UPDATE users SET verification_token = ?, is_verified = 0 WHERE id = ?",
-            (token, user_id),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
-# Initialize the database when this module is imported
+    db = get_db()
+    from bson import ObjectId
+    db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {
+            "verification_token": token,
+            "is_verified": 0
+        }}
+    )
 
 
 def _now_iso() -> str:
@@ -482,239 +306,189 @@ def _safe_json_dump(value: Any) -> str:
     return json.dumps(value or [], ensure_ascii=False)
 
 
-def get_lawyer_profile_by_id(lawyer_id: int, db_path: str = _DEFAULT_DB_PATH) -> Optional[Dict[str, Any]]:
-    conn = get_db_connection(db_path)
+def get_lawyer_profile_by_id(lawyer_id: str) -> Optional[Dict[str, Any]]:
+    db = get_db()
+    from bson import ObjectId
     try:
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM lawyer_profiles WHERE id = ?", (lawyer_id,))
-        row = cur.fetchone()
-        return _serialize_lawyer_row(row) if row else None
-    finally:
-        conn.close()
+        lawyer = db.lawyer_profiles.find_one({"_id": ObjectId(lawyer_id)})
+        if lawyer:
+            lawyer["id"] = str(lawyer["_id"])
+            del lawyer["_id"]
+            return _serialize_lawyer_doc(lawyer)
+        return None
+    except Exception:
+        return None
 
 
-def _serialize_lawyer_row(row: sqlite3.Row) -> Dict[str, Any]:
-    data = dict(row)
-    for key in ("availability_json", "communication_json", "consultation_modes_json"):
-        value = data.pop(key, None)
-        field_name = key.replace("_json", "")
-        if value:
-            try:
-                data[field_name] = json.loads(value)
-            except Exception:
-                data[field_name] = []
-        else:
-            data[field_name] = []
+def _serialize_lawyer_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert MongoDB document to dict format compatible with old SQLite format."""
+    data = dict(doc)
+    # MongoDB stores lists/dicts natively, so we don't need to parse JSON
+    # But we ensure these fields exist
+    for field in ("availability", "communication", "consultation_modes"):
+        if field not in data:
+            data[field] = []
     return data
 
 
 def create_subscription_purchase(
     purchase: Dict[str, Any],
-    db_path: str = _DEFAULT_DB_PATH,
 ) -> Dict[str, Any]:
     """Create a new subscription purchase and return it."""
-    conn = get_db_connection(db_path)
-    try:
-        cur = conn.cursor()
-        now = _now_iso()
-        subscription_id = f"SUB_{int(time.time())}_{secrets.token_hex(4)}"
-        
-        cur.execute(
-            """
-            INSERT INTO subscription_purchases (
-                subscription_id,
-                user_id,
-                tier_id,
-                tier_name,
-                price,
-                payment_reference,
-                status,
-                created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                subscription_id,
-                purchase["user_id"],
-                purchase["tier_id"],
-                purchase["tier_name"],
-                purchase["price"],
-                purchase["payment_reference"],
-                purchase.get("status", "active"),
-                now,
-            ),
-        )
-        conn.commit()
-        purchase_id = int(cur.lastrowid)
-        
-        return {
-            "id": purchase_id,
-            "subscription_id": subscription_id,
-            "user_id": purchase["user_id"],
-            "tier_id": purchase["tier_id"],
-            "tier_name": purchase["tier_name"],
-            "price": purchase["price"],
-            "payment_reference": purchase["payment_reference"],
-            "status": purchase.get("status", "active"),
-            "created_at": now,
-        }
-    finally:
-        conn.close()
+    db = get_db()
+    now = _now_iso()
+    subscription_id = f"SUB_{int(time.time())}_{secrets.token_hex(4)}"
+    
+    purchase_doc = {
+        "subscription_id": subscription_id,
+        "user_id": purchase["user_id"],
+        "tier_id": purchase["tier_id"],
+        "tier_name": purchase["tier_name"],
+        "price": purchase["price"],
+        "payment_reference": purchase["payment_reference"],
+        "status": purchase.get("status", "active"),
+        "created_at": now
+    }
+    
+    result = db.subscription_purchases.insert_one(purchase_doc)
+    
+    return {
+        "id": str(result.inserted_id),
+        "subscription_id": subscription_id,
+        "user_id": purchase["user_id"],
+        "tier_id": purchase["tier_id"],
+        "tier_name": purchase["tier_name"],
+        "price": purchase["price"],
+        "payment_reference": purchase["payment_reference"],
+        "status": purchase.get("status", "active"),
+        "created_at": now,
+    }
 
 
 def get_subscription_purchase(
     subscription_id: int,
-    db_path: str = _DEFAULT_DB_PATH,
 ) -> Optional[Dict[str, Any]]:
-    """Get a subscription purchase by its database id."""
-    conn = get_db_connection(db_path)
+    """Get a subscription purchase by its database id (MongoDB ObjectId as string or int)."""
+    db = get_db()
+    from bson import ObjectId
     try:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT * FROM subscription_purchases WHERE id = ?",
-            (subscription_id,),
-        )
-        row = cur.fetchone()
-        return dict(row) if row else None
-    finally:
-        conn.close()
+        # Try to convert to ObjectId if it's a string, otherwise use as int
+        if isinstance(subscription_id, str):
+            try:
+                obj_id = ObjectId(subscription_id)
+                purchase = db.subscription_purchases.find_one({"_id": obj_id})
+            except Exception:
+                # If not a valid ObjectId, try to find by subscription_id field
+                purchase = db.subscription_purchases.find_one({"subscription_id": subscription_id})
+        else:
+            # If it's an int, try to find by _id (ObjectId) or by subscription_id field
+            try:
+                obj_id = ObjectId(str(subscription_id))
+                purchase = db.subscription_purchases.find_one({"_id": obj_id})
+            except Exception:
+                # If conversion fails, try finding by subscription_id field
+                purchase = db.subscription_purchases.find_one({"subscription_id": str(subscription_id)})
+        
+        if purchase:
+            purchase["id"] = str(purchase["_id"])
+            del purchase["_id"]
+            return purchase
+        return None
+    except Exception:
+        return None
 
 
 def get_user_subscriptions(
     user_id: int,
     status: Optional[str] = "active",
-    db_path: str = _DEFAULT_DB_PATH,
 ) -> List[Dict[str, Any]]:
     """Get all subscriptions for a user, optionally filtered by status."""
-    conn = get_db_connection(db_path)
-    try:
-        cur = conn.cursor()
-        if status:
-            cur.execute(
-                "SELECT * FROM subscription_purchases WHERE user_id = ? AND status = ? ORDER BY created_at DESC",
-                (user_id, status),
-            )
-        else:
-            cur.execute(
-                "SELECT * FROM subscription_purchases WHERE user_id = ? ORDER BY created_at DESC",
-                (user_id,),
-            )
-        rows = cur.fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        conn.close()
+    db = get_db()
+    # MongoDB stores user_id as int, so we can query directly
+    query = {"user_id": int(user_id)}
+    if status:
+        query["status"] = status
+    
+    subscriptions = db.subscription_purchases.find(query).sort("created_at", -1)
+    result = []
+    for sub in subscriptions:
+        sub["id"] = str(sub["_id"])
+        del sub["_id"]
+        result.append(sub)
+    return result
 
 
 def list_lawyer_profiles(
     only_available: bool = False,
     limit: Optional[int] = None,
-    db_path: str = _DEFAULT_DB_PATH,
 ) -> List[Dict[str, Any]]:
-    conn = get_db_connection(db_path)
-    try:
-        cur = conn.cursor()
-        clauses = []
-        params: List[Any] = []
-        if only_available:
-            clauses.append("is_available = 1")
-        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        sql = (
-            "SELECT * FROM lawyer_profiles "
-            f"{where} "
-            "ORDER BY is_available DESC, updated_at DESC"
-        )
-        if limit:
-            sql += " LIMIT ?"
-            params.append(limit)
-        cur.execute(sql, params)
-        rows = cur.fetchall()
-        return [_serialize_lawyer_row(r) for r in rows]
-    finally:
-        conn.close()
+    db = get_db()
+    query = {}
+    if only_available:
+        query["is_available"] = 1
+    
+    cursor = db.lawyer_profiles.find(query).sort([("is_available", -1), ("updated_at", -1)])
+    if limit:
+        cursor = cursor.limit(limit)
+    
+    result = []
+    for lawyer in cursor:
+        lawyer["id"] = str(lawyer["_id"])
+        del lawyer["_id"]
+        result.append(_serialize_lawyer_doc(lawyer))
+    return result
 
 
 def set_lawyer_availability(
-    lawyer_id: int,
+    lawyer_id: str,
     *,
     is_available: Optional[bool] = None,
     status: Optional[str] = None,
-    db_path: str = _DEFAULT_DB_PATH,
 ) -> None:
-    conn = get_db_connection(db_path)
-    try:
-        cur = conn.cursor()
-        updates = []
-        params: List[Any] = []
-        if is_available is not None:
-            updates.append("is_available = ?")
-            params.append(1 if is_available else 0)
-        if status:
-            updates.append("status = ?")
-            params.append(status)
-        if not updates:
-            return
-        params.append(_now_iso())
-        params.append(lawyer_id)
-        cur.execute(
-            f"UPDATE lawyer_profiles SET {', '.join(updates)}, updated_at = ? WHERE id = ?",
-            params,
+    db = get_db()
+    from bson import ObjectId
+    updates = {}
+    if is_available is not None:
+        updates["is_available"] = 1 if is_available else 0
+    if status:
+        updates["status"] = status
+    if updates:
+        updates["updated_at"] = _now_iso()
+        db.lawyer_profiles.update_one(
+            {"_id": ObjectId(lawyer_id)},
+            {"$set": updates}
         )
-        conn.commit()
-    finally:
-        conn.close()
 
 
 def insert_lawyer_booking(
     booking: Dict[str, Any],
-    db_path: str = _DEFAULT_DB_PATH,
 ) -> Dict[str, Any]:
-    conn = get_db_connection(db_path)
-    try:
-        cur = conn.cursor()
-        now = _now_iso()
-        cur.execute(
-            """
-            INSERT INTO lawyer_bookings (
-                booking_id,
-                tier_id,
-                tier_name,
-                price,
-                user_id,
-                preferred_lawyer_id,
-                customer_name,
-                customer_phone,
-                customer_email,
-                issue_description,
-                payment_reference,
-                subscription_id,
-                status,
-                notes,
-                created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                booking["booking_id"],
-                booking["tier_id"],
-                booking.get("tier_name"),
-                booking["price"],
-                booking.get("user_id"),
-                booking.get("preferred_lawyer_id"),
-                booking.get("customer_name"),
-                booking.get("customer_phone"),
-                booking.get("customer_email"),
-                booking.get("issue_description"),
-                booking.get("payment_reference"),
-                booking.get("subscription_id"),
-                booking.get("status", "pending"),
-                booking.get("notes"),
-                now,
-            ),
-        )
-        conn.commit()
-        return {
-            "booking_id": booking["booking_id"],
-            "tier_id": booking["tier_id"],
-            "status": booking.get("status", "pending"),
-            "created_at": now,
-        }
-    finally:
-        conn.close()
+    db = get_db()
+    now = _now_iso()
+    
+    booking_doc = {
+        "booking_id": booking["booking_id"],
+        "tier_id": booking["tier_id"],
+        "tier_name": booking.get("tier_name"),
+        "price": booking["price"],
+        "user_id": booking.get("user_id"),
+        "preferred_lawyer_id": booking.get("preferred_lawyer_id"),
+        "customer_name": booking.get("customer_name"),
+        "customer_phone": booking.get("customer_phone"),
+        "customer_email": booking.get("customer_email"),
+        "issue_description": booking.get("issue_description"),
+        "payment_reference": booking.get("payment_reference"),
+        "subscription_id": booking.get("subscription_id"),
+        "status": booking.get("status", "pending"),
+        "notes": booking.get("notes"),
+        "created_at": now
+    }
+    
+    result = db.lawyer_bookings.insert_one(booking_doc)
+    
+    return {
+        "booking_id": booking["booking_id"],
+        "tier_id": booking["tier_id"],
+        "status": booking.get("status", "pending"),
+        "created_at": now,
+    }
