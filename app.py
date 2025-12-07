@@ -27,6 +27,7 @@ import json
 import secrets
 import re
 from urllib.parse import urlencode
+import xml.etree.ElementTree as ET
 
 # --- Securely load env ---
 from dotenv import load_dotenv
@@ -362,52 +363,115 @@ def _summarize_text(content: str, max_length: int = 360) -> str:
     return summary
 
 
+def _parse_rss_feed(rss_url: str, limit: int = 3) -> list[dict]:
+    """Parse RSS feed from Indian Kanoon and return case information."""
+    results: list[dict] = []
+    if not requests:
+        return results
+    
+    try:
+        resp = requests.get(rss_url, timeout=8, headers={'User-Agent': 'Mozilla/5.0'})
+        if resp.status_code != 200:
+            logger.info(f"RSS feed HTTP {resp.status_code} for {rss_url}")
+            return results
+        
+        # Parse XML
+        root = ET.fromstring(resp.content)
+        
+        # RSS structure: <rss><channel><item>...</item></channel></rss>
+        # Find all items
+        items = root.findall('.//item') or root.findall('.//{http://www.w3.org/2005/Atom}entry')
+        
+        for item in items[:limit]:
+            try:
+                # Get title
+                title_elem = item.find('title') or item.find('{http://www.w3.org/2005/Atom}title')
+                title = (title_elem.text or '').strip() if title_elem is not None else 'Untitled case'
+                
+                # Get link
+                link_elem = item.find('link') or item.find('{http://www.w3.org/2005/Atom}link')
+                url = ''
+                if link_elem is not None:
+                    url = link_elem.text or link_elem.get('href', '')
+                
+                # Get date
+                date_elem = item.find('pubDate') or item.find('published') or item.find('{http://www.w3.org/2005/Atom}published')
+                date = (date_elem.text or '').strip() if date_elem is not None else ''
+                
+                # Get description/summary
+                desc_elem = item.find('description') or item.find('summary') or item.find('{http://www.w3.org/2005/Atom}summary')
+                description = (desc_elem.text or '').strip() if desc_elem is not None else ''
+                
+                # Extract court name from title or description if possible
+                court = ''
+                title_lower = title.lower()
+                if 'supreme court' in title_lower or 'sc' in title_lower:
+                    court = 'Supreme Court of India'
+                elif 'high court' in title_lower or 'hc' in title_lower:
+                    court = 'High Court'
+                elif 'district court' in title_lower or 'sessions court' in title_lower:
+                    court = 'District / Sessions Court'
+                
+                results.append({
+                    'title': title,
+                    'court': court,
+                    'date': date,
+                    'citation': '',  # RSS feeds may not have citations
+                    'url': url,
+                    'summary': _summarize_text(description)
+                })
+            except Exception as item_err:
+                logger.debug(f"Error parsing RSS item: {item_err}")
+                continue
+                
+    except Exception as err:
+        logger.info(f"RSS feed parsing failed for {rss_url}: {err}")
+    
+    return results[:limit]
+
+
 def _search_cases_by_court(
     query: str,
     limit: int = 3,
     court_hints: list[str] | None = None,
     fallback_court_label: str | None = None,
 ) -> list[dict]:
-    """Fetch official case summaries filtered by court level."""
+    """Fetch official case summaries from Indian Kanoon RSS feeds."""
     results: list[dict] = []
     court_hints = [h.lower() for h in (court_hints or []) if h]
-    api_key = os.environ.get('INDIAN_KANOON_API_KEY')
-
-    def _matches_court(value: str | None) -> bool:
-        if not court_hints:
-            return True
-        val = (value or '').lower()
-        return any(h in val for h in court_hints)
-
-    if api_key and requests is not None:
-        try:
-            url = 'https://api.indiankanoon.org/search/'
-            params = {'formInput': query, 'pagenum': 0}
-            headers = {'Authorization': f'Token {api_key}'}
-            resp = requests.get(url, params=params, headers=headers, timeout=8)
-            if resp.status_code == 200:
-                data = resp.json()
-                for item in data.get('results') or []:
-                    court = item.get('court') or ''
-                    if not _matches_court(court):
-                        continue
-                    results.append({
-                        'title': item.get('title') or item.get('case_title') or 'Untitled case',
-                        'court': court or fallback_court_label or '',
-                        'date': item.get('judgement_date') or item.get('date') or '',
-                        'citation': item.get('citation') or item.get('equivalent_citations') or '',
-                        'url': item.get('url') or item.get('doc_url') or '',
-                        'summary': _summarize_text(item.get('snippet') or item.get('headnote') or '')
-                    })
-                    if len(results) >= limit:
-                        break
-            else:
-                logger.info(f"Kanoon HTTP {resp.status_code} for showcase query '{query}'")
-        except Exception as err:
-            logger.info(f"Kanoon showcase query failed ({err}); falling back to open search")
-
+    
+    # Use Indian Kanoon RSS feeds
+    rss_feeds = {
+        'supreme': 'https://indiankanoon.org/feeds/sc.rss',
+        'high': 'https://indiankanoon.org/feeds/hc.rss',
+        'district': 'https://indiankanoon.org/feeds/district.rss'
+    }
+    
+    # Determine which RSS feed to use based on court hints
+    feed_url = None
+    if court_hints:
+        if any('supreme' in h for h in court_hints):
+            feed_url = rss_feeds['supreme']
+        elif any('high' in h for h in court_hints):
+            feed_url = rss_feeds['high']
+        elif any('district' in h or 'sessions' in h for h in court_hints):
+            feed_url = rss_feeds['district']
+    
+    # If no specific court hint, try Supreme Court feed first
+    if not feed_url:
+        feed_url = rss_feeds['supreme']
+    
+    # Parse RSS feed
+    if feed_url and requests is not None:
+        results = _parse_rss_feed(feed_url, limit=limit)
+        # Update court labels if fallback provided
+        if fallback_court_label and results:
+            for result in results:
+                if not result.get('court'):
+                    result['court'] = fallback_court_label
+    
+    # If RSS feed didn't return results, fallback to DuckDuckGo
     if not results:
-        # Fallback: DuckDuckGo search constrained to official domains
         ddg_query = query
         if court_hints:
             ddg_query = f"{query} {' '.join(court_hints)}"
@@ -1339,38 +1403,66 @@ def chat():
         if not user:
             return jsonify({'error': 'Unauthorized'}), 401
 
-        # Fetch relevant court cases from Indian court databases (not local SQLite)
+        # Only fetch previous cases if this is a legal question (not identity/unrelated questions)
         previous_cases = []
-        try:
-            # Search for relevant cases from Indian courts using the case_law search
-            api_key = os.environ.get('INDIAN_KANOON_API_KEY')
-            if api_key and requests is not None:
-                try:
-                    # Build search query from user question
-                    search_query = question_en[:200]  # Limit query length
-                    url = 'https://api.indiankanoon.org/search/'
-                    params = {'formInput': search_query, 'pagenum': 0}
-                    headers = {'Authorization': f'Token {api_key}'}
-                    resp = requests.get(url, params=params, headers=headers, timeout=8)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        for item in (data.get('results') or [])[:5]:  # Get top 5 cases
-                            try:
+        is_legal = is_legal_question(question_en)
+        is_identity = is_identity_question(question_en)
+        
+        # Skip fetching previous cases for identity questions or non-legal questions
+        if is_legal and not is_identity:
+            try:
+                # Search for relevant cases from Indian courts using RSS feeds (NOT database)
+                # Try to get relevant cases from RSS feeds
+                if requests is not None:
+                    # Use RSS feeds from Indian Kanoon
+                    rss_feeds = [
+                        'https://indiankanoon.org/feeds/sc.rss',  # Supreme Court
+                        'https://indiankanoon.org/feeds/hc.rss',  # High Courts
+                    ]
+                    
+                    for feed_url in rss_feeds[:2]:  # Limit to 2 feeds
+                        try:
+                            feed_results = _parse_rss_feed(feed_url, limit=3)
+                            for item in feed_results:
                                 previous_cases.append({
-                                    'title': item.get('title') or item.get('case_title') or 'Untitled case',
-                                    'court': item.get('court') or '',
-                                    'date': item.get('judgement_date') or item.get('date') or '',
-                                    'citation': item.get('citation') or item.get('equivalent_citations') or '',
-                                    'url': item.get('url') or item.get('doc_url') or '',
-                                    'summary': _summarize_text(item.get('snippet') or item.get('headnote') or ''),
-                                    'question': question_en,  # Keep original question for context
-                                    'answer': ''  # Will be filled by AI
+                                    'title': item.get('title', ''),
+                                    'court': item.get('court', ''),
+                                    'date': item.get('date', ''),
+                                    'citation': item.get('citation', ''),
+                                    'url': item.get('url', ''),
+                                    'summary': item.get('summary', ''),
+                                    'question': question_en,
+                                    'answer': ''
                                 })
-                            except Exception:
-                                continue
-                except Exception as kanoon_err:
-                    logger.info(f"Indian Kanoon search failed: {kanoon_err}")
-                    # Fallback to DuckDuckGo search for official court domains
+                                if len(previous_cases) >= 5:
+                                    break
+                            if len(previous_cases) >= 5:
+                                break
+                        except Exception as feed_err:
+                            logger.debug(f"RSS feed {feed_url} failed: {feed_err}")
+                            continue
+                    
+                    # If RSS feeds didn't return enough results, fallback to DuckDuckGo
+                    if len(previous_cases) < 3:
+                        try:
+                            results = _duckduckgo_search_official(question_en, limit=5)
+                            for item in results:
+                                previous_cases.append({
+                                    'title': item.get('title', ''),
+                                    'court': item.get('court', ''),
+                                    'date': item.get('date', ''),
+                                    'citation': item.get('citation', ''),
+                                    'url': item.get('url', ''),
+                                    'summary': item.get('snippet', ''),
+                                    'question': question_en,
+                                    'answer': ''
+                                })
+                                if len(previous_cases) >= 5:
+                                    break
+                        except Exception as ddg_err:
+                            logger.warning(f"DuckDuckGo fallback also failed: {ddg_err}")
+                else:
+                    # Fallback to DuckDuckGo if requests not available
                     try:
                         results = _duckduckgo_search_official(question_en, limit=5)
                         for item in results:
@@ -1385,26 +1477,9 @@ def chat():
                                 'answer': ''
                             })
                     except Exception as ddg_err:
-                        logger.warning(f"DuckDuckGo fallback also failed: {ddg_err}")
-            else:
-                # Fallback to DuckDuckGo if API key not available
-                try:
-                    results = _duckduckgo_search_official(question_en, limit=5)
-                    for item in results:
-                        previous_cases.append({
-                            'title': item.get('title', ''),
-                            'court': item.get('court', ''),
-                            'date': item.get('date', ''),
-                            'citation': item.get('citation', ''),
-                            'url': item.get('url', ''),
-                            'summary': item.get('snippet', ''),
-                            'question': question_en,
-                            'answer': ''
-                        })
-                except Exception as ddg_err:
-                    logger.warning(f"DuckDuckGo search failed: {ddg_err}")
-        except Exception as cases_err:
-            logger.warning(f"Failed to fetch court cases: {cases_err}")
+                        logger.warning(f"DuckDuckGo search failed: {ddg_err}")
+            except Exception as cases_err:
+                logger.warning(f"Failed to fetch court cases: {cases_err}")
 
         answer = None
         # Try OpenAI legal model with previous cases context
