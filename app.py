@@ -1339,35 +1339,72 @@ def chat():
         if not user:
             return jsonify({'error': 'Unauthorized'}), 401
 
-        # Fetch similar previous cases to provide context
+        # Fetch relevant court cases from Indian court databases (not local SQLite)
         previous_cases = []
         try:
-            rows = fetch_chats_filtered() or []
-            q_tokens = _tokenize(question_en)
-            scored = []
-            
-            for r in rows[:200]:  # Check last 200 cases
+            # Search for relevant cases from Indian courts using the case_law search
+            api_key = os.environ.get('INDIAN_KANOON_API_KEY')
+            if api_key and requests is not None:
                 try:
-                    rq = (r.get('question') or '')
-                    ra = (r.get('answer') or '')
-                    score_q = _jaccard(q_tokens, _tokenize(rq))
-                    score_a = _jaccard(q_tokens, _tokenize(ra)) * 0.5
-                    score = score_q + score_a
-                    if score > 0:
-                        scored.append({
-                            'question': rq,
-                            'answer': ra,
-                            'timestamp': r.get('timestamp'),
-                            'score': score
+                    # Build search query from user question
+                    search_query = question_en[:200]  # Limit query length
+                    url = 'https://api.indiankanoon.org/search/'
+                    params = {'formInput': search_query, 'pagenum': 0}
+                    headers = {'Authorization': f'Token {api_key}'}
+                    resp = requests.get(url, params=params, headers=headers, timeout=8)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        for item in (data.get('results') or [])[:5]:  # Get top 5 cases
+                            try:
+                                previous_cases.append({
+                                    'title': item.get('title') or item.get('case_title') or 'Untitled case',
+                                    'court': item.get('court') or '',
+                                    'date': item.get('judgement_date') or item.get('date') or '',
+                                    'citation': item.get('citation') or item.get('equivalent_citations') or '',
+                                    'url': item.get('url') or item.get('doc_url') or '',
+                                    'summary': _summarize_text(item.get('snippet') or item.get('headnote') or ''),
+                                    'question': question_en,  # Keep original question for context
+                                    'answer': ''  # Will be filled by AI
                         })
                 except Exception:
                     continue
-            
-            # Sort by score and take top 5
-            scored.sort(key=lambda x: (-x['score'], x.get('timestamp') or ''))
-            previous_cases = scored[:5]
+                except Exception as kanoon_err:
+                    logger.info(f"Indian Kanoon search failed: {kanoon_err}")
+                    # Fallback to DuckDuckGo search for official court domains
+                    try:
+                        results = _duckduckgo_search_official(question_en, limit=5)
+                        for item in results:
+                            previous_cases.append({
+                                'title': item.get('title', ''),
+                                'court': item.get('court', ''),
+                                'date': item.get('date', ''),
+                                'citation': item.get('citation', ''),
+                                'url': item.get('url', ''),
+                                'summary': item.get('snippet', ''),
+                                'question': question_en,
+                                'answer': ''
+                            })
+                    except Exception as ddg_err:
+                        logger.warning(f"DuckDuckGo fallback also failed: {ddg_err}")
+            else:
+                # Fallback to DuckDuckGo if API key not available
+                try:
+                    results = _duckduckgo_search_official(question_en, limit=5)
+                    for item in results:
+                        previous_cases.append({
+                            'title': item.get('title', ''),
+                            'court': item.get('court', ''),
+                            'date': item.get('date', ''),
+                            'citation': item.get('citation', ''),
+                            'url': item.get('url', ''),
+                            'summary': item.get('snippet', ''),
+                            'question': question_en,
+                            'answer': ''
+                        })
+                except Exception as ddg_err:
+                    logger.warning(f"DuckDuckGo search failed: {ddg_err}")
         except Exception as cases_err:
-            logger.warning(f"Failed to fetch previous cases: {cases_err}")
+            logger.warning(f"Failed to fetch court cases: {cases_err}")
 
         answer = None
         # Try OpenAI legal model with previous cases context
