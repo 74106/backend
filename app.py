@@ -1365,9 +1365,9 @@ def chat():
                                     'summary': _summarize_text(item.get('snippet') or item.get('headnote') or ''),
                                     'question': question_en,  # Keep original question for context
                                     'answer': ''  # Will be filled by AI
-                        })
-                except Exception:
-                    continue
+                                })
+                            except Exception:
+                                continue
                 except Exception as kanoon_err:
                     logger.info(f"Indian Kanoon search failed: {kanoon_err}")
                     # Fallback to DuckDuckGo search for official court domains
