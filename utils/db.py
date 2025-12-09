@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 # MongoDB connection configuration
 MONGO_URI = os.environ.get(
     "MONGODB_URI",
-    os.environ.get("MONGO_URI", "mongodb+srv://huluhuli9_db_user:,<db_password>@cluster0.008irff.mongodb.net/?appName=Cluster0")
+    os.environ.get("MONGO_URI", "mongodb+srv://huluhuli9_db_user:<db_password>@cluster0.008irff.mongodb.net/?appName=Cluster0")
 )
 MONGO_DB_NAME = os.environ.get("MONGODB_DB_NAME", "nyaysetu")
 
