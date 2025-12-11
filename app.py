@@ -191,24 +191,11 @@ def get_consultation_tiers() -> list[dict]:
     """Central definition of consultation tiers so frontend and APIs stay in sync."""
     return [
         {
-            'id': 'basic',
-            'name': '79 / Quick Help',
-            'price': 79,
-            'currency': 'INR',
-            'duration': '1 hour',
-            'hours': 1,
-            'features': [
-                '1 hour consultation (voice/video/chat)',
-                'Immediate cyber-law triage',
-                'Checklist of documents to gather'
-            ]
-        },
-        {
             'id': 'standard',
             'name': '199 / Deep Dive',
             'price': 199,
             'currency': 'INR',
-            'duration': '3 hours',
+            'duration': '1 hours',
             'hours': 3,
             'features': [
                 'Up to 3 hours split across the day',
@@ -221,7 +208,7 @@ def get_consultation_tiers() -> list[dict]:
             'name': '299 / Case Build',
             'price': 299,
             'currency': 'INR',
-            'duration': '5 hours',
+            'duration': '2 hours',
             'hours': 5,
             'features': [
                 '5 lawyer hours for complex matters',
@@ -235,7 +222,7 @@ def get_consultation_tiers() -> list[dict]:
             'price': 999,
             'currency': 'INR',
             'duration': 'Premium cyber-law partner',
-            'hours': 8,
+            'hours': 5,
             'featured': True,
             'features': [
                 'Top-tier cyber lawyer & dedicated VC room',
