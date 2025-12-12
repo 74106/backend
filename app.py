@@ -191,11 +191,24 @@ def get_consultation_tiers() -> list[dict]:
     """Central definition of consultation tiers so frontend and APIs stay in sync."""
     return [
         {
-            'id': 'standard',
-            'name': '199 / Deep Dive',
+            'id': 'basic',
+            'name': '199 / 1 Hour Talk',
             'price': 199,
             'currency': 'INR',
-            'duration': '1 hours',
+            'duration': '1 hour',
+            'hours': 1,
+            'features': [
+                '1 hour consultation (voice/video/chat)',
+                'Immediate cyber-law triage',
+                'Checklist of documents to gather'
+            ]
+        },
+        {
+            'id': 'standard',
+            'name': '299 / 3 Hours Talk',
+            'price': 299,
+            'currency': 'INR',
+            'duration': '3 hours',
             'hours': 3,
             'features': [
                 'Up to 3 hours split across the day',
@@ -204,25 +217,12 @@ def get_consultation_tiers() -> list[dict]:
             ]
         },
         {
-            'id': 'extended',
-            'name': '299 / Case Build',
-            'price': 299,
-            'currency': 'INR',
-            'duration': '2 hours',
-            'hours': 5,
-            'features': [
-                '5 lawyer hours for complex matters',
-                'Drafting of notices / RTI / complaints',
-                'Priority slot + escalation support'
-            ]
-        },
-        {
             'id': 'premium',
-            'name': '999 / Premium Lawyer',
+            'name': '999 / Premium Lawyers',
             'price': 999,
             'currency': 'INR',
             'duration': 'Premium cyber-law partner',
-            'hours': 5,
+            'hours': 8,
             'featured': True,
             'features': [
                 'Top-tier cyber lawyer & dedicated VC room',
@@ -321,7 +321,7 @@ def get_current_user():
     try:
         user = decode_jwt(token)
         if user:
-            # MongoDB uses string IDs, ensure compatibility
+            # SQLite uses integer IDs, ensure compatibility
             if 'user_id' in user:
                 user['id'] = user['user_id']  # For backward compatibility
             elif 'id' in user:
@@ -519,9 +519,9 @@ def similar_cases():
         if not is_legal or is_identity:
             return jsonify({'similar': []}), 200
 
-        # IMPORTANT: Do NOT use MongoDB data for similar cases
+        # IMPORTANT: Do NOT use database data for similar cases
         # Similar cases should come from external sources (RSS feeds, etc.), not from our database
-        # Return empty results to ensure we don't use MongoDB data
+        # Return empty results to ensure we don't use database data
         return jsonify({'similar': []}), 200
     except Exception as e:
         logger.error(f"Error in similar_cases endpoint: {e}")
@@ -1309,12 +1309,12 @@ def _handle_lawyer_booking(user: dict, payload: dict) -> tuple[dict, int]:
     if not subscription:
         return {'error': 'Subscription not found'}, 404
     
-    # MongoDB stores user_id, but we need to compare properly
-    user_id = user.get('user_id') or user.get('id')
-    sub_user_id = subscription.get('user_id')
+    # SQLite stores user_id as integer, compare properly
+    user_id = int(user.get('user_id') or user.get('id', 0))
+    sub_user_id = int(subscription.get('user_id', 0))
     
-    # Convert both to strings for comparison (MongoDB might return different types)
-    if str(sub_user_id) != str(user_id):
+    # Compare user IDs
+    if sub_user_id != user_id:
         return {'error': 'Unauthorized: This subscription does not belong to you'}, 403
     
     if subscription['status'] != 'active':
@@ -1395,15 +1395,19 @@ def chat():
         if is_legal and not is_identity:
             try:
                 # Search for relevant cases from Indian courts using RSS feeds (NOT database)
-                # Try to get relevant cases from RSS feeds
+                # Use RSS feeds from Indian Kanoon as defined in _search_cases_by_court
                 if requests is not None:
-                    # Use RSS feeds from Indian Kanoon
-                    rss_feeds = [
-                        'https://indiankanoon.org/feeds/sc.rss',  # Supreme Court
-                        'https://indiankanoon.org/feeds/hc.rss',  # High Courts
-                    ]
+                    # Use the same RSS feeds as defined in _search_cases_by_court (lines 438-442)
+                    rss_feeds = {
+                        'supreme': 'https://indiankanoon.org/feeds/sc.rss',
+                        'high': 'https://indiankanoon.org/feeds/hc.rss',
+                        'district': 'https://indiankanoon.org/feeds/district.rss'
+                    }
                     
-                    for feed_url in rss_feeds[:2]:  # Limit to 2 feeds
+                    # Fetch from all three RSS feeds (supreme, high, district)
+                    for feed_key, feed_url in rss_feeds.items():
+                        if len(previous_cases) >= 5:
+                            break
                         try:
                             feed_results = _parse_rss_feed(feed_url, limit=3)
                             for item in feed_results:
@@ -1419,8 +1423,6 @@ def chat():
                                 })
                                 if len(previous_cases) >= 5:
                                     break
-                            if len(previous_cases) >= 5:
-                                break
                         except Exception as feed_err:
                             logger.debug(f"RSS feed {feed_url} failed: {feed_err}")
                             continue
@@ -1573,15 +1575,8 @@ def login():
             return jsonify({'error': 'Invalid email or password'}), 401
         
         # Create JWT token
-        # MongoDB returns string IDs, convert to int for JWT compatibility
-        user_id = user.get('id') or user.get('_id')
-        if isinstance(user_id, str):
-            # Convert MongoDB ObjectId string to a numeric ID for JWT
-            try:
-                # Use hash of string ID to get a consistent numeric value
-                user_id = abs(hash(user_id)) % (10**9)
-            except Exception:
-                user_id = 0
+        # SQLite returns integer IDs, use directly
+        user_id = int(user.get('id', 0))
         
         token_payload = {
             'user_id': user_id,
