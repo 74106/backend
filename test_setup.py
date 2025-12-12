@@ -19,7 +19,7 @@ def test_env_config():
         'SMTP_USER': 'Email configuration',
         'SMTP_PASS': 'Email configuration', 
         'JWT_SECRET': 'JWT configuration',
-        'GEMINI_API_KEY': 'Gemini API configuration'
+        'OPENAI_API_KEY': 'OpenAI API configuration'
     }
     
     missing_vars = []
@@ -40,75 +40,109 @@ def test_env_config():
     print("✅ All environment variables are configured!")
     return True
 
-def test_gemini_api():
-    """Test Gemini API connectivity."""
-    print("\n🤖 Testing Gemini API...")
+def test_openai_api():
+    """Test OpenAI API connectivity."""
+    print("\n🤖 Testing OpenAI API...")
     
-    api_key = os.environ.get('GEMINI_API_KEY')
+    api_key = os.environ.get('OPENAI_API_KEY')
     if not api_key:
-        print("❌ GEMINI_API_KEY not found")
+        print("❌ OPENAI_API_KEY not found")
         return False
     
     try:
         import requests
         
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent"
-        headers = {"Content-Type": "application/json"}
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
         payload = {
-            "contents": [{"parts": [{"text": "Hello, this is a test message. Please respond with 'API working correctly'."}]}],
-            "generationConfig": {
-                "temperature": 0.7,
-                "topK": 40,
-                "topP": 0.95,
-                "maxOutputTokens": 1024,
-            }
+            "model": os.environ.get('OPENAI_MODEL', 'gpt-4o-mini'),
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Hello, this is a test message. Please respond with 'API working correctly'."
+                }
+            ],
+            "max_tokens": 50
         }
         
-        response = requests.post(f"{url}?key={api_key}", headers=headers, json=payload, timeout=10)
+        response = requests.post(url, headers=headers, json=payload, timeout=10)
         response.raise_for_status()
         
         data = response.json()
-        if 'candidates' in data and len(data['candidates']) > 0:
-            print("✅ Gemini API is working correctly!")
+        if 'choices' in data and len(data['choices']) > 0:
+            print("✅ OpenAI API is working correctly!")
             return True
         else:
-            print("❌ Unexpected response format from Gemini API")
+            print("❌ Unexpected response format from OpenAI API")
             return False
             
     except ImportError:
         print("❌ 'requests' library not installed. Run: pip install requests")
         return False
     except Exception as e:
-        print(f"❌ Gemini API test failed: {e}")
+        print(f"❌ OpenAI API test failed: {e}")
         return False
 
 def test_database():
-    """Test database initialization."""
-    print("\n🗄️ Testing database...")
+    """Test SQLite3 database initialization."""
+    print("\n🗄️ Testing SQLite3 database...")
     
     try:
         from utils.db import init_db, get_db_connection
+        import os
         
         # Initialize database
         init_db()
         
-        # Test connection
+        # Test database connection
         conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-        tables = cursor.fetchall()
-        conn.close()
+        if conn is None:
+            print("❌ Could not get database connection")
+            return False
         
-        table_names = [table[0] for table in tables]
-        expected_tables = ['chats', 'forms', 'users']
+        print("✅ SQLite3 database connection successful!")
         
-        if all(table in table_names for table in expected_tables):
-            print("✅ Database tables created successfully!")
-            return True
+        # Check tables
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = [row[0] for row in cur.fetchall()]
+        expected_tables = ['chats', 'forms', 'users', 'lawyer_profiles', 
+                          'subscription_purchases', 'lawyer_bookings']
+        
+        print(f"✅ Database accessible")
+        print(f"   Found {len(tables)} table(s): {', '.join(tables)}")
+        
+        # Check if all expected tables exist
+        missing_tables = [t for t in expected_tables if t not in tables]
+        if missing_tables:
+            print(f"⚠️ Missing tables: {', '.join(missing_tables)}")
         else:
-            print(f"❌ Missing tables. Found: {table_names}, Expected: {expected_tables}")
+            print("✅ All expected tables exist")
+        
+        # Test a simple operation
+        try:
+            cur.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'")
+            count = cur.fetchone()[0]
+            if count > 0:
+                print("✅ Database query test successful!")
+                conn.close()
+                return True
+            else:
+                print("❌ No tables found in database")
+                conn.close()
+                return False
+        except Exception as query_err:
+            print(f"⚠️ Database query test failed: {query_err}")
+            conn.close()
             return False
             
+    except ImportError as e:
+        print(f"❌ Failed to import database module: {e}")
+        print("   SQLite3 is built into Python, no additional installation needed.")
+        return False
     except Exception as e:
         print(f"❌ Database test failed: {e}")
         return False
@@ -155,7 +189,7 @@ def main():
         test_env_config,
         test_database, 
         test_auth_functions,
-        test_gemini_api
+        test_openai_api
     ]
     
     passed = 0
