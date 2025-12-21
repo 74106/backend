@@ -10,29 +10,27 @@ from typing import Tuple
 
 
 def detect_language(text: str) -> str:
-	"""Best-effort language detection. Returns IETF code like 'en', 'hi', etc.
-
-	If fasttext-langdetect is available, use it; otherwise use simple heuristics
-	for Devanagari (Hindi), Bengali, Gujarati, Gurmukhi, Kannada, Malayalam,
-	Odia, Tamil, Telugu. Defaults to 'en'.
+	"""Best-effort language detection. Returns IETF code like 'en', 'hi', 'fr', 'es', etc.
+	
+	Supports any language that langdetect can detect. Uses Google Translator's language codes.
+	If detection fails, uses Unicode heuristics for common Indian scripts, then defaults to 'en'.
 	"""
 	text = (text or "").strip()
 	if not text:
 		return 'en'
-	# Try fasttext if available
+	
+	# Try langdetect first - it supports many languages
 	try:
 		from langdetect import detect  # type: ignore
 		code = detect(text)
-		# Normalize common outputs
-		mapping = {
-			'hi': 'hi', 'bn': 'bn', 'gu': 'gu', 'pa': 'pa', 'kn': 'kn', 'ml': 'ml',
-			'or': 'or', 'ta': 'ta', 'te': 'te', 'mr': 'mr', 'en': 'en'
-		}
-		return mapping.get(code, 'en')
+		# Return the detected code directly - Google Translator supports many languages
+		# Only validate it's a reasonable length (2-5 chars for language codes)
+		if code and len(code) >= 2 and len(code) <= 5:
+			return code
 	except Exception:
 		pass
 
-	# Unicode block heuristics
+	# Unicode block heuristics for common Indian scripts (fallback)
 	first = ord(text[0])
 	# Devanagari range
 	if 0x0900 <= first <= 0x097F:
@@ -61,7 +59,8 @@ def detect_language(text: str) -> str:
 	# Malayalam
 	if 0x0D00 <= first <= 0x0D7F:
 		return 'ml'
-	# Fallback
+	
+	# Final fallback to English if nothing matches
 	return 'en'
 
 
