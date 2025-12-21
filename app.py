@@ -1468,25 +1468,26 @@ def chat():
 
         answer = None
         # Try OpenAI legal model with previous cases context
+        # Use detected_lang so AI responds in user's language
+        target_lang = detected_lang or 'en'
         try:
-            answer = get_legal_advice(question_en, 'en', previous_cases)
+            answer = get_legal_advice(question_en, target_lang, previous_cases)
             logger.info("Got answer from OpenAI legal model")
         except Exception as local_err:
             logger.warning(f"OpenAI legal model failed: {local_err}")
 
-        # If still no answer, fallback
+        # If still no answer, fallback - translate message to user's language
         if not answer:
-            answer = "I apologize, but I'm currently unable to provide detailed legal advice. Please consult a qualified lawyer for your specific situation."
+            fallback_msg = "I apologize, but I'm currently unable to provide detailed legal advice. Please consult a qualified lawyer for your specific situation."
+            answer = translate(fallback_msg, 'en', target_lang)
 
-        # Enforce policy/sanitization on English answer first
+        # Enforce policy/sanitization - answer is already in target language
         try:
-            sanitized_en = apply_policy(answer, question_en, 'en')
+            sanitized = apply_policy(answer, question_en, target_lang)
         except Exception as pol_err:
             logger.error(f"Policy enforcement failed: {pol_err}")
-            sanitized_en = 'I can only provide legal knowledge. Please ask a legal question.'
-
-        # Translate back to user's language if needed
-        sanitized = translate(sanitized_en, 'en', detected_lang or 'en')
+            error_msg = 'I can only provide legal knowledge. Please ask a legal question.'
+            sanitized = translate(error_msg, 'en', target_lang)
 
         timestamp = get_current_timestamp()
         try:
