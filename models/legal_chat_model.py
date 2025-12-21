@@ -613,7 +613,8 @@ When answering questions, you have access to previous court cases and their resu
 3. Explain patterns or precedents from previous cases
 4. Help users understand what to expect based on similar cases
 
-Always prioritize accuracy and cite specific laws and sections. Format everything in clear, organized points."""
+Always prioritize accuracy and cite specific laws and sections. Format everything in clear, organized points.
+IMPORTANT: You must respond in the same language as this instruction. All your responses must be written entirely in the language of this instruction."""
         
         instruction = legal_advisor.translate_text(base_instruction, language)
 
